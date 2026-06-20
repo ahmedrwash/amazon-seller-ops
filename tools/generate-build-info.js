@@ -14,7 +14,10 @@ function git(args, fallback) {
 }
 
 const fullCommit = process.env.GITHUB_SHA || git(['rev-parse', 'HEAD'], 'unknown');
-const branch = process.env.GITHUB_REF_NAME || git(['branch', '--show-current'], 'unknown');
+const checkedOutBranch = git(['branch', '--show-current'], '');
+const inferredBranch = git(['name-rev', '--name-only', '--exclude=tags/*', 'HEAD'], 'detached')
+  .replace(/^remotes\/origin\//, '');
+const branch = process.env.GITHUB_REF_NAME || checkedOutBranch || inferredBranch;
 const buildInfo = {
   commit: fullCommit === 'unknown' ? fullCommit : fullCommit.slice(0, 8),
   branch: branch || 'detached',
