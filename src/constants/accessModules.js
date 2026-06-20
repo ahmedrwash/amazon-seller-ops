@@ -33,7 +33,7 @@ export const MODULES = [
     view: OPERATORS, actions: { edit: OPERATORS } },
   { id: 'suppliers',       label: 'Suppliers',         routes: ['/suppliers'],
     view: OPERATORS, actions: { edit: OPERATORS, delete: EDITORS } },
-  { id: 'providers',       label: 'Service Providers', routes: ['/providers', '/provider-cycle'],
+  { id: 'service_providers', label: 'Service Providers', routes: ['/providers', '/provider-cycle'],
     view: OPERATORS, actions: { edit: OPERATORS } },
   { id: 'finance',         label: 'Finance',           routes: ['/finance', '/growth'],
     view: EDITORS,   actions: { edit: EDITORS, export: EDITORS } },
