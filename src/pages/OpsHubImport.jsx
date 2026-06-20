@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/customSupabaseClient';
 import { getIntegrationSettings, saveIntegrationSettings, saveScrapeSnapshot } from '@/lib/integrations';
+import { amazonWeek, weekOptions as buildWeekOptions, parseWeekValue, formatRange } from '@/lib/weeks';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,14 +15,6 @@ import {
 } from 'lucide-react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-function getISOWeek(dateStr) {
-  const d = new Date(dateStr);
-  if (isNaN(d)) return null;
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-  const w1 = new Date(d.getFullYear(), 0, 4);
-  return 1 + Math.round(((d - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7);
-}
 
 function parseCSV(text) {
   const lines = text.trim().split(/\r?\n/);
@@ -141,13 +134,7 @@ function CSVImportTab({ products }) {
   const [result, setResult] = useState(null);
   const [fileName, setFileName] = useState('');
 
-  const weekOptions = Array.from({ length: 12 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - i * 7);
-    const wk = getISOWeek(d);
-    const yr = d.getFullYear();
-    return { label: `Week ${wk} · ${yr}`, value: `${yr}-${wk}` };
-  });
+  const weekOptions = buildWeekOptions(12);
 
   const buildMapped = (data, rType) => {
     const map = rType === 'business' ? BUSINESS_REPORT_MAP : ADVERTISING_REPORT_MAP;
@@ -183,9 +170,8 @@ function CSVImportTab({ products }) {
       const lastRow = data[data.length - 1];
       const dateStr = lastRow['Date'] || lastRow['date'];
       if (dateStr) {
-        const wk = getISOWeek(new Date(dateStr));
-        const yr = new Date(dateStr).getFullYear();
-        if (wk) setSelectedWeek(`${yr}-${wk}`);
+        const d = new Date(dateStr);
+        if (!isNaN(d)) setSelectedWeek(amazonWeek(d).value);
       }
     }
 
@@ -243,24 +229,29 @@ function CSVImportTab({ products }) {
     if (!mapped || !Object.keys(mapped).length) {
       toast({ title: 'No data to import — check the file', variant: 'destructive' }); return;
     }
-    const [yr, wk] = selectedWeek.split('-').map(Number);
+    const wkInfo = parseWeekValue(selectedWeek);
+    if (!wkInfo) { toast({ title: 'Invalid week', variant: 'destructive' }); return; }
+    const { year: yr, week: wk, period_start, period_end } = wkInfo;
     setImporting(true);
     setResult(null);
     try {
       const payload = {
         product_id: selectedProductId,
         user_id: user?.id,
+        year: yr,
         week_number: wk,
+        period_start,
+        period_end,
         updated_at: new Date().toISOString(),
         ...mapped,
       };
       const { error } = await supabase.from('product_weekly_data')
-        .upsert(payload, { onConflict: 'product_id,week_number' });
+        .upsert(payload, { onConflict: 'product_id,year,week_number' });
       if (error) throw error;
       const fields = Object.keys(mapped).length;
       setResult({ ok: true, fields, rows: rows.length, week: wk });
       toast({ title: `Saved to Week ${wk} — ${fields} fields updated` });
-      setTimeout(() => navigate(`/ops-hub/entry?product=${selectedProductId}&week=${wk}`), 800);
+      setTimeout(() => navigate(`/ops-hub/entry?product=${selectedProductId}&week=${wk}&year=${yr}`), 800);
     } catch (err) {
       setResult({ ok: false, error: err.message });
       toast({ title: 'Import failed', description: err.message, variant: 'destructive' });
@@ -457,13 +448,7 @@ function ApifyTab({ products }) {
     saveConfigs(configs.filter(c => c.productId !== productId));
   };
 
-  const weekOptions = Array.from({ length: 12 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - i * 7);
-    const wk = getISOWeek(d);
-    const yr = d.getFullYear();
-    return { label: `Week ${wk} · ${yr}`, value: `${yr}-${wk}` };
-  });
+  const weekOptions = buildWeekOptions(12);
 
   const saveKey = async () => {
     setSavingKey(true);
@@ -689,7 +674,9 @@ function ApifyTab({ products }) {
 
   const handleSaveAll = async () => {
     if (!targetWeek) { toast({ title: 'Select a week first', variant: 'destructive' }); return; }
-    const [, wk] = targetWeek.split('-').map(Number);
+    const wkInfo = parseWeekValue(targetWeek);
+    if (!wkInfo) { toast({ title: 'Invalid week', variant: 'destructive' }); return; }
+    const { year: yr, week: wk, period_start, period_end } = wkInfo;
     const toSave = configs.filter(c => c.status === 'done' && c.result);
     if (!toSave.length) { toast({ title: 'No fetched data to save', variant: 'destructive' }); return; }
 
@@ -700,7 +687,10 @@ function ApifyTab({ products }) {
         const payload = {
           product_id: c.productId,
           user_id: user?.id,
+          year: yr,
           week_number: wk,
+          period_start,
+          period_end,
           updated_at: new Date().toISOString(),
           apify_fetched_at: new Date().toISOString(),
           apify_raw: c.raw ? { ...c.raw, _extra: undefined } : null,
@@ -711,14 +701,14 @@ function ApifyTab({ products }) {
         return payload;
       });
       const { error } = await supabase.from('product_weekly_data')
-        .upsert(payloads, { onConflict: 'product_id,week_number' });
+        .upsert(payloads, { onConflict: 'product_id,year,week_number' });
       if (error) throw error;
       toast({ title: `Saved ${toSave.length} products to Week ${wk}` });
       // Navigate to Log Weekly Data for the first saved product at this week
       if (toSave.length === 1) {
-        navigate(`/ops-hub/entry?product=${toSave[0].productId}&week=${wk}`);
+        navigate(`/ops-hub/entry?product=${toSave[0].productId}&week=${wk}&year=${yr}`);
       } else {
-        navigate(`/ops-hub/entry?week=${wk}`);
+        navigate(`/ops-hub/entry?week=${wk}&year=${yr}`);
       }
     } catch (err) {
       toast({ title: 'Save failed', description: err.message, variant: 'destructive' });

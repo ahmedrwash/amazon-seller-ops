@@ -8,22 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, ArrowLeft, Save, ChevronLeft, ChevronRight, Info, Zap } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
-
-// Get ISO week number from a date
-function getISOWeek(date) {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-  const week1 = new Date(d.getFullYear(), 0, 4);
-  return 1 + Math.round(((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
-}
-
-function getWeekLabel(weekNum, year) {
-  return `Week ${weekNum} · ${year}`;
-}
-
-const CURRENT_WEEK = getISOWeek(new Date());
-const CURRENT_YEAR = new Date().getFullYear();
+import { amazonWeek, parseWeekValue, datesForWeek, formatRange } from '@/lib/weeks';
 
 const EMPTY = {
   // Sales actuals
@@ -114,7 +99,20 @@ export default function OpsDataEntry() {
 
   const [products, setProducts] = useState([]);
   const [selectedProductId, setSelectedProductId] = useState(searchParams.get('product') || '');
-  const [selectedWeek, setSelectedWeek] = useState(parseInt(searchParams.get('week')) || CURRENT_WEEK);
+  const [wk, setWk] = useState(() => {
+    const wkParam = parseInt(searchParams.get('week'));
+    const yrParam = parseInt(searchParams.get('year'));
+    if (wkParam) {
+      const year = yrParam || new Date().getFullYear();
+      return { year, week: wkParam, ...datesForWeek(year, wkParam) };
+    }
+    return amazonWeek(new Date());
+  });
+  const stepWeek = (deltaDays) => {
+    const d = new Date(wk.start);
+    d.setDate(d.getDate() + deltaDays);
+    setWk(amazonWeek(d));
+  };
   const [form, setForm] = useState(EMPTY);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -139,7 +137,8 @@ export default function OpsDataEntry() {
         .from('product_weekly_data')
         .select('*')
         .eq('product_id', selectedProductId)
-        .eq('week_number', selectedWeek)
+        .eq('year', wk.year)
+        .eq('week_number', wk.week)
         .maybeSingle();
 
       if (data) {
@@ -174,6 +173,7 @@ export default function OpsDataEntry() {
           .from('product_weekly_data')
           .select('selling_price, cogs_per_unit, fba_fulfillment_fee, amazon_referral_fee_percent, inbound_freight_per_unit, import_tariff_per_unit, ppc_cost_per_unit, account_management_fee_monthly, other_costs_per_unit')
           .eq('product_id', selectedProductId)
+          .order('year', { ascending: false })
           .order('week_number', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -193,7 +193,7 @@ export default function OpsDataEntry() {
     } finally {
       setLoading(false);
     }
-  }, [selectedProductId, selectedWeek]);
+  }, [selectedProductId, wk.year, wk.week]);
 
   useEffect(() => { loadWeekData(); }, [loadWeekData]);
 
@@ -213,7 +213,10 @@ export default function OpsDataEntry() {
       const payload = {
         product_id: selectedProductId,
         user_id: user?.id,
-        week_number: selectedWeek,
+        year: wk.year,
+        week_number: wk.week,
+        period_start: wk.period_start,
+        period_end: wk.period_end,
         updated_at: new Date().toISOString(),
       };
       Object.keys(EMPTY).forEach(k => {
@@ -222,10 +225,10 @@ export default function OpsDataEntry() {
 
       const { error } = await supabase
         .from('product_weekly_data')
-        .upsert(payload, { onConflict: 'product_id,week_number' });
+        .upsert(payload, { onConflict: 'product_id,year,week_number' });
 
       if (error) throw error;
-      toast({ title: `Week ${selectedWeek} data saved`, description: 'Dashboard updated.' });
+      toast({ title: `Week ${wk.week} saved`, description: formatRange(wk.start, wk.end) });
       await loadWeekData();
     } catch (err) {
       toast({ title: 'Save failed', description: err.message, variant: 'destructive' });
@@ -285,11 +288,14 @@ export default function OpsDataEntry() {
 
             {/* Week selector */}
             <div className="flex items-center gap-1 bg-white/10 rounded-lg px-2 py-1 border border-white/20">
-              <button onClick={() => setSelectedWeek(w => Math.max(1, w - 1))} className="text-slate-400 hover:text-white p-1">
+              <button onClick={() => stepWeek(-7)} className="text-slate-400 hover:text-white p-1" title="Previous week">
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="text-sm font-mono px-2 min-w-[90px] text-center">{getWeekLabel(selectedWeek, CURRENT_YEAR)}</span>
-              <button onClick={() => setSelectedWeek(w => Math.min(52, w + 1))} className="text-slate-400 hover:text-white p-1">
+              <div className="px-2 min-w-[150px] text-center leading-tight">
+                <div className="text-sm font-mono">Week {wk.week} · {wk.year}</div>
+                <div className="text-[10px] text-slate-400">{formatRange(wk.start, wk.end)}</div>
+              </div>
+              <button onClick={() => stepWeek(7)} className="text-slate-400 hover:text-white p-1" title="Next week">
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -299,7 +305,7 @@ export default function OpsDataEntry() {
               {existingId && <span className="text-xs bg-green-500/20 text-green-400 border border-green-500/30 px-2 py-1 rounded-full">Saved ✓</span>}
               <Button onClick={handleSave} disabled={saving || !selectedProductId} className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white h-9">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                Save Week {selectedWeek}
+                Save Week {wk.week}
               </Button>
             </div>
           </div>
@@ -436,7 +442,7 @@ export default function OpsDataEntry() {
           <div className="flex justify-end pt-2">
             <Button onClick={handleSave} disabled={saving || !selectedProductId} size="lg" className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white px-8">
               {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-              Save Week {selectedWeek}
+              Save Week {wk.week}
             </Button>
           </div>
         </div>

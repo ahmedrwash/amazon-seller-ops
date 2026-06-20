@@ -59,8 +59,9 @@ export default function OpsHubDashboard() {
       await Promise.all(prods.map(async (p) => {
         const { data } = await supabase
           .from('product_weekly_data')
-          .select('week_number, gmv_this_week, units_sold_this_week, ppc_spend_this_week, ppc_revenue_this_week, inventory_at_fba, selling_price, cogs_per_unit, fba_fulfillment_fee, amazon_referral_fee_percent, inbound_freight_per_unit, import_tariff_per_unit, ppc_cost_per_unit, bsr, total_reviews, average_star_rating, updated_at')
+          .select('year, week_number, period_start, period_end, gmv_this_week, units_sold_this_week, ppc_spend_this_week, ppc_revenue_this_week, inventory_at_fba, selling_price, cogs_per_unit, fba_fulfillment_fee, amazon_referral_fee_percent, inbound_freight_per_unit, import_tariff_per_unit, ppc_cost_per_unit, bsr, total_reviews, average_star_rating, updated_at')
           .eq('product_id', p.id)
+          .order('year', { ascending: false })
           .order('week_number', { ascending: false })
           .limit(1)
           .maybeSingle();

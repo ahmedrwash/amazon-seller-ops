@@ -81,8 +81,8 @@ export default function OpsHubScorecard() {
       const [{ data: prod }, { data: wk }, { data: tgt }] = await Promise.all([
         supabase.from('products').select('id, product_name, sku, asin').eq('id', id).maybeSingle(),
         supabase.from('product_weekly_data')
-          .select('week_number, gmv_this_week, units_sold_this_week, sessions, buy_box_percentage, ppc_spend_this_week, ppc_revenue_this_week, bsr, total_reviews, average_star_rating, selling_price, cogs_per_unit, fba_fulfillment_fee, amazon_referral_fee_percent, inbound_freight_per_unit, import_tariff_per_unit, ppc_cost_per_unit')
-          .eq('product_id', id).order('week_number', { ascending: false }).limit(1).maybeSingle(),
+          .select('year, week_number, period_start, period_end, gmv_this_week, units_sold_this_week, sessions, buy_box_percentage, ppc_spend_this_week, ppc_revenue_this_week, bsr, total_reviews, average_star_rating, selling_price, cogs_per_unit, fba_fulfillment_fee, amazon_referral_fee_percent, inbound_freight_per_unit, import_tariff_per_unit, ppc_cost_per_unit')
+          .eq('product_id', id).order('year', { ascending: false }).order('week_number', { ascending: false }).limit(1).maybeSingle(),
         supabase.from('kpi_targets').select('*').eq('product_id', id).maybeSingle(),
       ]);
       setProduct(prod);
