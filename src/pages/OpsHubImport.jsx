@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/customSupabaseClient';
+import { getIntegrationSettings, saveIntegrationSettings, saveScrapeSnapshot } from '@/lib/integrations';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -406,12 +407,22 @@ const STORAGE_KEY = 'apify_product_configs';
 function ApifyTab({ products }) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('apify_api_key') || '');
   const [actorId, setActorId] = useState(() => localStorage.getItem('apify_actor_id') || '');
+  const [savingKey, setSavingKey] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [targetWeek, setTargetWeek] = useState('');
   const [fetchingId, setFetchingId] = useState(null); // product id currently being fetched
   const [fetchingAll, setFetchingAll] = useState(false);
+
+  // Load credentials from the DB (integration_settings) on mount; localStorage seeds instantly.
+  useEffect(() => {
+    getIntegrationSettings(['apify_api_key', 'apify_actor_id']).then(s => {
+      if (s.apify_api_key != null) setApiKey(s.apify_api_key);
+      if (s.apify_actor_id != null) setActorId(s.apify_actor_id);
+    });
+  }, []);
 
   // Multi-product config: [{ productId, asin, keyword, status, result }]
   const [configs, setConfigs] = useState(() => {
@@ -454,10 +465,20 @@ function ApifyTab({ products }) {
     return { label: `Week ${wk} · ${yr}`, value: `${yr}-${wk}` };
   });
 
-  const saveKey = () => {
-    localStorage.setItem('apify_api_key', apiKey);
-    localStorage.setItem('apify_actor_id', actorId);
-    toast({ title: 'Settings saved' });
+  const saveKey = async () => {
+    setSavingKey(true);
+    try {
+      await saveIntegrationSettings({
+        apify_api_key: { value: apiKey, description: 'Apify personal API token' },
+        apify_actor_id: { value: actorId, description: 'Apify Amazon crawler actor ID' },
+      });
+      toast({ title: 'Settings saved to database' });
+    } catch (err) {
+      // localStorage cache already updated by helper; surface DB failure
+      toast({ title: 'Saved locally — DB sync failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setSavingKey(false);
+    }
   };
 
   // Exact field mapper based on confirmed junglee~Amazon-crawler output schema
@@ -622,6 +643,8 @@ function ApifyTab({ products }) {
     try {
       const { mapped, raw } = await fetchOne(cfg);
       saveConfigs(configs.map(c => c.productId === cfg.productId ? { ...c, status: 'done', result: mapped, raw } : c));
+      // Persist a snapshot so every fetch builds price/rating/review history
+      saveScrapeSnapshot({ asin: cfg.asin.trim(), mapped, raw });
       toast({ title: `Fetched: ${products.find(p => p.id === cfg.productId)?.product_name}` });
     } catch (err) {
       saveConfigs(configs.map(c => c.productId === cfg.productId ? { ...c, status: 'error', result: null } : c));
@@ -649,6 +672,8 @@ function ApifyTab({ products }) {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
           return updated;
         });
+        // Persist a snapshot so every fetch builds price/rating/review history
+        saveScrapeSnapshot({ asin: cfg.asin.trim(), mapped, raw });
       } catch {
         setConfigs(prev => {
           const updated = prev.map(c => c.productId === cfg.productId ? { ...c, status: 'error' } : c);
@@ -739,7 +764,13 @@ function ApifyTab({ products }) {
           </div>
         </div>
 
-        <Button variant="outline" size="sm" onClick={saveKey} className="w-full md:w-auto">Save Settings</Button>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={saveKey} disabled={savingKey} className="w-full md:w-auto">
+            {savingKey ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : null}
+            Save Settings
+          </Button>
+          <span className="text-xs text-slate-400">Stored in database · synced across devices</span>
+        </div>
       </div>
 
       {/* Product table */}
