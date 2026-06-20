@@ -22,6 +22,7 @@ export const AuthProvider = ({ children }) => {
   const [canManageFinance, setCanManageFinance] = useState(false);
   const [hasOpsHubAccess, setHasOpsHubAccess] = useState(false);
   const [userRole, setUserRole] = useState('viewer');
+  const [modulePermissions, setModulePermissions] = useState({}); // per-user overrides: { module_id: row }
 
   const refreshProfile = async (userId) => {
     if (!userId) return null;
@@ -55,6 +56,25 @@ export const AuthProvider = ({ children }) => {
     const role = await getUserRole(userId);
     setUserRole(role);
     return role;
+  };
+
+  // Per-user module access overrides (UX layer; RLS is the real gate).
+  const loadModulePermissions = async (userId) => {
+    if (!userId) { setModulePermissions({}); return {}; }
+    try {
+      const { data, error } = await supabase
+        .from('user_module_permissions')
+        .select('module_id, can_view, can_create, can_edit, can_delete, can_export')
+        .eq('user_id', userId);
+      if (error) { setModulePermissions({}); return {}; }
+      const map = {};
+      (data || []).forEach(r => { map[r.module_id] = r; });
+      setModulePermissions(map);
+      return map;
+    } catch {
+      setModulePermissions({});
+      return {};
+    }
   };
 
   const provisionProfile = async (authUser) => {
@@ -172,11 +192,13 @@ export const AuthProvider = ({ children }) => {
             await refreshUserRole(session.user.id);
             const userProfile = await provisionProfile(session.user);
             setProfile(userProfile);
+            await loadModulePermissions(session.user.id);
           } else {
             setSession(null);
             setUser(null);
             setProfile(null);
             setUserRole('viewer');
+            setModulePermissions({});
           }
         }
       } catch (err) {
@@ -203,9 +225,11 @@ export const AuthProvider = ({ children }) => {
           const userProfile = await provisionProfile(session.user);
           setProfile(userProfile);
         }
+        await loadModulePermissions(session.user.id);
       } else {
         setProfile(null);
         setUserRole('viewer');
+        setModulePermissions({});
       }
       setLoading(false);
     });
@@ -306,7 +330,9 @@ export const AuthProvider = ({ children }) => {
         hasMarketplaceAccess,
         canEditRecord,
         canDeleteRecord,
-        canApproveFinance
+        canApproveFinance,
+        modulePermissions,
+        refreshModulePermissions: () => loadModulePermissions(user?.id)
       }}
     >
       {children}

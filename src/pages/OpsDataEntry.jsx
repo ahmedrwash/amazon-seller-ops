@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Loader2, ArrowLeft, Save, ChevronLeft, ChevronRight, Info, Zap } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { amazonWeek, parseWeekValue, datesForWeek, formatRange } from '@/lib/weeks';
+import { Can } from '@/components/Can';
 
 const EMPTY = {
   // Sales actuals
@@ -303,10 +304,14 @@ export default function OpsDataEntry() {
             {/* Status + Save */}
             <div className="flex items-center gap-2">
               {existingId && <span className="text-xs bg-green-500/20 text-green-400 border border-green-500/30 px-2 py-1 rounded-full">Saved ✓</span>}
-              <Button onClick={handleSave} disabled={saving || !selectedProductId} className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white h-9">
-                {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                Save Week {wk.week}
-              </Button>
+              <Can module="ops_hub" action="edit" fallback={
+                <span className="text-xs text-slate-400 border border-slate-200 px-2 py-1 rounded-full">Read-only</span>
+              }>
+                <Button onClick={handleSave} disabled={saving || !selectedProductId} className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white h-9">
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                  Save Week {wk.week}
+                </Button>
+              </Can>
             </div>
           </div>
         </div>
@@ -439,12 +444,14 @@ export default function OpsDataEntry() {
           </Section>
 
           {/* Bottom save */}
-          <div className="flex justify-end pt-2">
-            <Button onClick={handleSave} disabled={saving || !selectedProductId} size="lg" className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white px-8">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-              Save Week {wk.week}
-            </Button>
-          </div>
+          <Can module="ops_hub" action="edit">
+            <div className="flex justify-end pt-2">
+              <Button onClick={handleSave} disabled={saving || !selectedProductId} size="lg" className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white px-8">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                Save Week {wk.week}
+              </Button>
+            </div>
+          </Can>
         </div>
       )}
     </div>

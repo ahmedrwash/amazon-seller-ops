@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/context/AuthContext';
 import { isPrimaryAdmin } from '@/lib/permissions';
+import { MODULES, ACTION_KEYS, roleModuleDefault } from '@/constants/accessModules';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from '@/components/ui/table';
@@ -19,7 +20,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Search, MoreVertical, ShieldAlert, CheckCircle2, UserCog, User, Users, Info, Shield, Ban, RefreshCw, AlertCircle, WifiOff, UserPlus, Trash2, RotateCcw, Mail } from 'lucide-react';
+import { Loader2, Search, MoreVertical, ShieldAlert, CheckCircle2, UserCog, User, Users, Info, Shield, Ban, RefreshCw, AlertCircle, WifiOff, UserPlus, Trash2, RotateCcw, Mail, SlidersHorizontal } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const ROLE_DEFINITIONS = [
@@ -50,6 +51,12 @@ export default function UserManagement() {
   // Remove-access confirm
   const [removeTarget, setRemoveTarget] = useState(null);
   const [isRemoving, setIsRemoving] = useState(false);
+
+  // Page & action access matrix
+  const [accessTarget, setAccessTarget] = useState(null);
+  const [accessMatrix, setAccessMatrix] = useState({}); // { moduleId: {view,create,edit,delete,export} }
+  const [accessLoading, setAccessLoading] = useState(false);
+  const [accessSaving, setAccessSaving] = useState(false);
 
   // Add user modal
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
@@ -253,6 +260,110 @@ export default function UserManagement() {
       toast({ title: 'Error removing access', description: error.message, variant: 'destructive' });
     } finally {
       setIsRemoving(false);
+    }
+  };
+
+  // ── Page & action access (per-user overrides) ────────────────────────────────
+  const openAccessModal = async (u) => {
+    if (isPrimaryAdmin(u.email) || u.role === 'admin') {
+      toast({ title: 'Full access', description: 'Admins already have access to everything.', variant: 'destructive' });
+      return;
+    }
+    if (u.source !== 'profile' || !u.id) {
+      toast({ title: 'User must sign up first', description: 'Page/action access can be set once they have an account.', variant: 'destructive' });
+      return;
+    }
+    setAccessTarget(u);
+    setAccessLoading(true);
+    setAccessMatrix({});
+    try {
+      const { data } = await supabase.from('user_module_permissions')
+        .select('module_id, can_view, can_create, can_edit, can_delete, can_export')
+        .eq('user_id', u.id);
+      const overrides = {};
+      (data || []).forEach(r => { overrides[r.module_id] = r; });
+      const matrix = {};
+      MODULES.forEach(m => {
+        const def = roleModuleDefault(m, u.role || 'viewer', u);
+        const ov = overrides[m.id];
+        matrix[m.id] = ov ? {
+          view: ov.can_view ?? def.view,
+          create: ov.can_create ?? def.create,
+          edit: ov.can_edit ?? def.edit,
+          delete: ov.can_delete ?? def.delete,
+          export: ov.can_export ?? def.export,
+        } : { ...def };
+      });
+      setAccessMatrix(matrix);
+    } catch (err) {
+      toast({ title: 'Error loading access', description: err.message, variant: 'destructive' });
+    } finally {
+      setAccessLoading(false);
+    }
+  };
+
+  const toggleCell = (moduleId, action) => {
+    setAccessMatrix(prev => ({ ...prev, [moduleId]: { ...prev[moduleId], [action]: !prev[moduleId]?.[action] } }));
+  };
+
+  const saveAccess = async () => {
+    if (!accessTarget) return;
+    setAccessSaving(true);
+    try {
+      // Only store rows that differ from the role default; delete the rest so
+      // future role changes still flow through for untouched modules.
+      const toUpsert = [];
+      const toDelete = [];
+      MODULES.forEach(m => {
+        const def = roleModuleDefault(m, accessTarget.role || 'viewer', accessTarget);
+        const cur = accessMatrix[m.id] || def;
+        const differs = ACTION_KEYS.some(a => !!cur[a] !== !!def[a]);
+        if (differs) {
+          toUpsert.push({
+            user_id: accessTarget.id,
+            module_id: m.id,
+            can_view: !!cur.view,
+            can_create: !!cur.create,
+            can_edit: !!cur.edit,
+            can_delete: !!cur.delete,
+            can_export: !!cur.export,
+            updated_by: user.id,
+            updated_at: new Date().toISOString(),
+          });
+        } else {
+          toDelete.push(m.id);
+        }
+      });
+      if (toUpsert.length) {
+        const { error } = await supabase.from('user_module_permissions')
+          .upsert(toUpsert, { onConflict: 'user_id,module_id' });
+        if (error) throw error;
+      }
+      if (toDelete.length) {
+        await supabase.from('user_module_permissions')
+          .delete().eq('user_id', accessTarget.id).in('module_id', toDelete);
+      }
+      toast({ title: 'Access saved', description: `${toUpsert.length} custom override(s) for ${accessTarget.email}.` });
+      setAccessTarget(null);
+    } catch (err) {
+      toast({ title: 'Error saving access', description: err.message, variant: 'destructive' });
+    } finally {
+      setAccessSaving(false);
+    }
+  };
+
+  const resetAccess = async () => {
+    if (!accessTarget) return;
+    setAccessSaving(true);
+    try {
+      const { error } = await supabase.from('user_module_permissions').delete().eq('user_id', accessTarget.id);
+      if (error) throw error;
+      toast({ title: 'Reset to role defaults' });
+      setAccessTarget(null);
+    } catch (err) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setAccessSaving(false);
     }
   };
 
@@ -504,6 +615,9 @@ export default function UserManagement() {
                                 <DropdownMenuItem onClick={() => openRoleModal(u)} disabled={isPrimary}>
                                   <UserCog className="h-4 w-4 mr-2" /> Edit Role &amp; Access
                                 </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openAccessModal(u)} disabled={isPrimary || u.role === 'admin' || u.source !== 'profile'}>
+                                  <SlidersHorizontal className="h-4 w-4 mr-2" /> Page &amp; Action Access
+                                </DropdownMenuItem>
 
                                 <div className="h-px bg-slate-200 my-1 mx-2" />
 
@@ -697,6 +811,73 @@ export default function UserManagement() {
               {isRemoving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
               {removeTarget?.source === 'invite' ? 'Delete Invite' : 'Revoke Access'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Page & Action Access matrix */}
+      <Dialog open={!!accessTarget} onOpenChange={(o) => !o && setAccessTarget(null)}>
+        <DialogContent className="sm:max-w-[640px]">
+          <DialogHeader>
+            <DialogTitle>Page &amp; Action Access</DialogTitle>
+            <DialogDescription>
+              Fine-tune what <span className="font-medium text-slate-900">{accessTarget?.email}</span> can see and do, on top of their
+              <span className="capitalize"> {accessTarget?.role}</span> role. Unchecking a page hides it; leaving everything at the role default keeps it role-driven.
+            </DialogDescription>
+          </DialogHeader>
+
+          {accessLoading ? (
+            <div className="py-10 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-[hsl(var(--terracotta))]" /></div>
+          ) : (
+            <div className="max-h-[55vh] overflow-y-auto overflow-x-auto -mx-1 px-1">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-white">
+                  <tr className="text-xs text-slate-500 border-b border-slate-200">
+                    <th className="text-left font-medium py-2 pr-2">Module</th>
+                    {['view', 'create', 'edit', 'delete', 'export'].map(c => (
+                      <th key={c} className="font-medium py-2 px-2 text-center capitalize">{c}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {MODULES.map(m => (
+                    <tr key={m.id} className="border-b border-slate-100">
+                      <td className="py-2 pr-2 text-slate-700">{m.label}</td>
+                      {['view', 'create', 'edit', 'delete', 'export'].map(col => {
+                        const supported = col === 'view' || !!m.actions?.[col];
+                        return (
+                          <td key={col} className="py-2 px-2 text-center">
+                            {supported ? (
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-slate-300 accent-[hsl(var(--terracotta))]"
+                                checked={!!accessMatrix[m.id]?.[col]}
+                                onChange={() => toggleCell(m.id, col)}
+                              />
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <DialogFooter className="flex-col sm:flex-row sm:justify-between gap-2">
+            <Button variant="ghost" onClick={resetAccess} disabled={accessSaving} className="text-slate-500">
+              <RotateCcw className="h-4 w-4 mr-2" /> Reset to role defaults
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setAccessTarget(null)}>Cancel</Button>
+              <Button onClick={saveAccess} disabled={accessSaving || accessLoading} className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white">
+                {accessSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Save Access
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

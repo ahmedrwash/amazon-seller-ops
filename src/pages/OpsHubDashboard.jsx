@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Loader2, Plus, TrendingUp, TrendingDown, Package, PenLine, AlertTriangle, Upload, Target } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import { Can } from '@/components/Can';
 
 const fmt = (n, type = 'number') => {
   if (n === null || n === undefined || isNaN(n)) return '—';
@@ -130,12 +131,16 @@ export default function OpsHubDashboard() {
             <p className="text-slate-400 text-sm mt-1">{products.length} product{products.length !== 1 ? 's' : ''} · Daily performance tracking</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => navigate('/ops-hub/import')} className="border-white/20 text-white hover:bg-white/10 bg-transparent">
-              <Upload className="w-4 h-4 mr-2" /> Import Data
-            </Button>
-            <Button onClick={() => setIsAddOpen(true)} className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white">
-              <Plus className="w-4 h-4 mr-2" /> Add Product
-            </Button>
+            <Can module="ops_hub" action="create">
+              <Button variant="outline" onClick={() => navigate('/ops-hub/import')} className="border-white/20 text-white hover:bg-white/10 bg-transparent">
+                <Upload className="w-4 h-4 mr-2" /> Import Data
+              </Button>
+            </Can>
+            <Can module="ops_hub" action="create">
+              <Button onClick={() => setIsAddOpen(true)} className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white">
+                <Plus className="w-4 h-4 mr-2" /> Add Product
+              </Button>
+            </Can>
           </div>
         </div>
       </div>
@@ -146,9 +151,11 @@ export default function OpsHubDashboard() {
             <Package className="w-12 h-12 text-slate-300 mb-4" />
             <h2 className="font-heading text-2xl text-[hsl(var(--cinder))] mb-2">No products yet</h2>
             <p className="text-slate-500 mb-6">Add your first Amazon product to start tracking.</p>
-            <Button onClick={() => setIsAddOpen(true)} className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white">
-              <Plus className="w-4 h-4 mr-2" /> Add Product
-            </Button>
+            <Can module="ops_hub" action="create">
+              <Button onClick={() => setIsAddOpen(true)} className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white">
+                <Plus className="w-4 h-4 mr-2" /> Add Product
+              </Button>
+            </Can>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -228,13 +235,17 @@ export default function OpsHubDashboard() {
 
                   {/* Actions */}
                   <div className="border-t border-[hsl(var(--border))] px-4 py-3 grid grid-cols-3 gap-2 bg-slate-50">
-                    <Button
-                      size="sm"
-                      className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white"
-                      onClick={() => navigate(`/ops-hub/entry?product=${p.id}`)}
-                    >
-                      <PenLine className="w-3.5 h-3.5 mr-1.5" /> Log
-                    </Button>
+                    <Can module="ops_hub" action="edit" fallback={
+                      <div className="flex items-center justify-center text-xs text-slate-300">—</div>
+                    }>
+                      <Button
+                        size="sm"
+                        className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white w-full"
+                        onClick={() => navigate(`/ops-hub/entry?product=${p.id}`)}
+                      >
+                        <PenLine className="w-3.5 h-3.5 mr-1.5" /> Log
+                      </Button>
+                    </Can>
                     <Button
                       size="sm"
                       variant="outline"

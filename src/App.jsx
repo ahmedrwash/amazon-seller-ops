@@ -8,6 +8,7 @@ import { MarketplaceProvider } from '@/contexts/MarketplaceContext';
 import { SidebarProvider } from '@/contexts/SidebarContext';
 import { Toaster } from '@/components/ui/toaster';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import RequireModule from '@/components/RequireModule';
 import AdminRoute from '@/components/AdminRoute';
 import FinanceRoute from '@/components/FinanceRoute';
 import OpsRoute from '@/components/OpsRoute';
@@ -84,42 +85,42 @@ export default function App() {
                   <Route path="/ops-hub" element={
                     <ProtectedRoute>
                       <MainLayout>
-                        <OpsHubDashboard />
+                        <RequireModule module="ops_hub"><OpsHubDashboard /></RequireModule>
                       </MainLayout>
                     </ProtectedRoute>
                   } />
                   <Route path="/ops-hub/entry" element={
                     <ProtectedRoute>
                       <MainLayout>
-                        <OpsDataEntry />
+                        <RequireModule module="ops_hub"><OpsDataEntry /></RequireModule>
                       </MainLayout>
                     </ProtectedRoute>
                   } />
                   <Route path="/ops-hub/import" element={
                     <ProtectedRoute>
                       <MainLayout>
-                        <OpsHubImport />
+                        <RequireModule module="ops_hub"><OpsHubImport /></RequireModule>
                       </MainLayout>
                     </ProtectedRoute>
                   } />
                   <Route path="/ops-hub/products" element={
                     <ProtectedRoute>
                       <MainLayout>
-                        <ProductMasterDataPage />
+                        <RequireModule module="ops_hub"><ProductMasterDataPage /></RequireModule>
                       </MainLayout>
                     </ProtectedRoute>
                   } />
                   <Route path="/ops-hub/product/:id" element={
                     <ProtectedRoute>
                       <MainLayout>
-                        <OpsHubProductDetail />
+                        <RequireModule module="ops_hub"><OpsHubProductDetail /></RequireModule>
                       </MainLayout>
                     </ProtectedRoute>
                   } />
                   <Route path="/ops-hub/scorecard/:id" element={
                     <ProtectedRoute>
                       <MainLayout>
-                        <OpsHubScorecard />
+                        <RequireModule module="ops_hub"><OpsHubScorecard /></RequireModule>
                       </MainLayout>
                     </ProtectedRoute>
                   } />
@@ -174,8 +175,8 @@ export default function App() {
                   <Route path="/provider-cycle/:id" element={<ProtectedRoute><MainLayout><ProviderCycleWorkspace /></MainLayout></ProtectedRoute>} />
 
                   {/* Finance */}
-                  <Route path="/finance" element={<FinanceRoute><MainLayout><FinancePage /></MainLayout></FinanceRoute>} />
-                  <Route path="/growth" element={<FinanceRoute><MainLayout><GrowthPage /></MainLayout></FinanceRoute>} />
+                  <Route path="/finance" element={<FinanceRoute><MainLayout><RequireModule module="finance"><FinancePage /></RequireModule></MainLayout></FinanceRoute>} />
+                  <Route path="/growth" element={<FinanceRoute><MainLayout><RequireModule module="finance"><GrowthPage /></RequireModule></MainLayout></FinanceRoute>} />
 
                   {/* Email Intake Routes */}
                   <Route path="/email-intake" element={
