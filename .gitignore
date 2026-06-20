@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 dist-ssr/
+public/build-info.json
 *.local
 
 # Logs
