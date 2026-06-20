@@ -285,6 +285,7 @@ export default defineConfig({
 		addTransformIndexHtml
 	],
 	server: {
+		port: parseInt(process.env.PORT) || 5173,
 		cors: true,
 		headers: {
 			'Cross-Origin-Embedder-Policy': 'credentialless',

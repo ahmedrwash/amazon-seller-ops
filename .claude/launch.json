@@ -5,7 +5,8 @@
       "name": "horizons-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 3000
+      "port": 5174,
+      "autoPort": true
     }
   ]
 }

@@ -120,8 +120,9 @@ export default function OpsHubProductDetail() {
         const [{ data: prod }, { data: rows }] = await Promise.all([
           supabase.from('products').select('id, product_name, sku, asin, main_category').eq('id', id).maybeSingle(),
           supabase.from('product_weekly_data')
-            .select('week_number, gmv_this_week, units_sold_this_week, sessions, page_views, buy_box_percentage, ppc_spend_this_week, ppc_revenue_this_week, clicks, orders_from_ppc, bsr, total_reviews, average_star_rating, primary_keyword_rank, inventory_at_fba, selling_price, updated_at')
+            .select('year, week_number, period_start, period_end, gmv_this_week, units_sold_this_week, sessions, page_views, buy_box_percentage, ppc_spend_this_week, ppc_revenue_this_week, clicks, orders_from_ppc, bsr, total_reviews, average_star_rating, primary_keyword_rank, inventory_at_fba, selling_price, updated_at')
             .eq('product_id', id)
+            .order('year', { ascending: true })
             .order('week_number', { ascending: true }),
         ]);
         setProduct(prod);
