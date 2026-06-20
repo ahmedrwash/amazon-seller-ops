@@ -38,7 +38,7 @@ export default function AdminUsersTable({ users, onUpdate }) {
                 </TableCell>
                 <TableCell>
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                    u.role === 'Admin' ? 'bg-purple-900/30 text-purple-400' : 'bg-slate-800 text-slate-300'
+                    u.role === 'admin' ? 'bg-purple-900/30 text-purple-400' : 'bg-slate-800 text-slate-300'
                   }`}>
                     {u.role}
                   </span>
@@ -51,7 +51,7 @@ export default function AdminUsersTable({ users, onUpdate }) {
                   </span>
                 </TableCell>
                 <TableCell className="text-sm text-slate-400">
-                   {u.role === 'Admin' ? 'Full System' : `${accessCount} Marketplaces`}
+                   {u.role === 'admin' ? 'Full System' : `${accessCount} Marketplaces`}
                 </TableCell>
                 <TableCell className="text-right">
                   <Sheet>

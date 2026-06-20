@@ -22,6 +22,7 @@ export const AuthProvider = ({ children }) => {
   const [canManageFinance, setCanManageFinance] = useState(false);
   const [hasOpsHubAccess, setHasOpsHubAccess] = useState(false);
   const [userRole, setUserRole] = useState('viewer');
+  const [modulePermissions, setModulePermissions] = useState({}); // per-user overrides: { module_id: row }
 
   const refreshProfile = async (userId) => {
     if (!userId) return null;
@@ -55,6 +56,25 @@ export const AuthProvider = ({ children }) => {
     const role = await getUserRole(userId);
     setUserRole(role);
     return role;
+  };
+
+  // Per-user module access overrides (UX layer; RLS is the real gate).
+  const loadModulePermissions = async (userId) => {
+    if (!userId) { setModulePermissions({}); return {}; }
+    try {
+      const { data, error } = await supabase
+        .from('user_module_permissions')
+        .select('module_id, can_view, can_create, can_edit, can_delete, can_export')
+        .eq('user_id', userId);
+      if (error) { setModulePermissions({}); return {}; }
+      const map = {};
+      (data || []).forEach(r => { map[r.module_id] = r; });
+      setModulePermissions(map);
+      return map;
+    } catch {
+      setModulePermissions({});
+      return {};
+    }
   };
 
   const provisionProfile = async (authUser) => {
@@ -108,14 +128,14 @@ export const AuthProvider = ({ children }) => {
   // Authorization Methods
   const hasMarketplaceAccess = (marketplaceId) => {
     if (!profile) return false;
-    if (profile.role === 'Admin') return true;
+    if (profile.role === 'admin') return true;
     return allowedMarketplaceIds.includes(marketplaceId);
   };
 
   const canEditRecord = (record) => {
     if (!profile) return false;
-    if (profile.role === 'Admin') return true;
-    if (profile.role === 'Viewer') return false;
+    if (profile.role === 'admin') return true;
+    if (profile.role === 'viewer') return false;
     
     const isCreator = record?.created_by === user?.id;
     const isOwner = record?.owner_id === user?.id;
@@ -126,15 +146,15 @@ export const AuthProvider = ({ children }) => {
 
   const canDeleteRecord = (record) => {
     if (!profile) return false;
-    if (profile.role === 'Admin') return true;
-    if (profile.role === 'Viewer') return false;
+    if (profile.role === 'admin') return true;
+    if (profile.role === 'viewer') return false;
 
     return record?.created_by === user?.id;
   };
 
   const canApproveFinance = () => {
     if (!profile) return false;
-    return profile.role === 'Admin' || canManageFinance;
+    return profile.role === 'admin' || canManageFinance;
   };
 
   const checkEmailVerified = () => {
@@ -145,10 +165,10 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     if (profile) {
       setAllowedMarketplaceIds(profile.allowed_marketplace_ids || []);
-      // Can manage users is true if profile admin OR new userRole is admin
-      setCanManageUsersState(profile.role === 'Admin' || profile.can_manage_users || userRole === 'admin');
-      setCanManageFinance(profile.role === 'Admin' || profile.can_manage_finance);
-      setHasOpsHubAccess(profile.role === 'Admin' || profile.ops_hub);
+      // Admins (by role) can always manage users; otherwise honor the capability flag.
+      setCanManageUsersState(profile.role === 'admin' || profile.can_manage_users || userRole === 'admin');
+      setCanManageFinance(profile.role === 'admin' || profile.can_manage_finance);
+      setHasOpsHubAccess(profile.role === 'admin' || profile.ops_hub);
     } else {
       setAllowedMarketplaceIds([]);
       setCanManageUsersState(false);
@@ -172,11 +192,13 @@ export const AuthProvider = ({ children }) => {
             await refreshUserRole(session.user.id);
             const userProfile = await provisionProfile(session.user);
             setProfile(userProfile);
+            await loadModulePermissions(session.user.id);
           } else {
             setSession(null);
             setUser(null);
             setProfile(null);
             setUserRole('viewer');
+            setModulePermissions({});
           }
         }
       } catch (err) {
@@ -203,9 +225,11 @@ export const AuthProvider = ({ children }) => {
           const userProfile = await provisionProfile(session.user);
           setProfile(userProfile);
         }
+        await loadModulePermissions(session.user.id);
       } else {
         setProfile(null);
         setUserRole('viewer');
+        setModulePermissions({});
       }
       setLoading(false);
     });
@@ -306,7 +330,9 @@ export const AuthProvider = ({ children }) => {
         hasMarketplaceAccess,
         canEditRecord,
         canDeleteRecord,
-        canApproveFinance
+        canApproveFinance,
+        modulePermissions,
+        refreshModulePermissions: () => loadModulePermissions(user?.id)
       }}
     >
       {children}

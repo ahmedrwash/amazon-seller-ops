@@ -33,7 +33,7 @@ export default function UserPermissionsPanel({ user, onUpdate }) {
     }
   };
 
-  const isAdmin = user.role === 'Admin';
+  const isAdmin = user.role === 'admin';
 
   return (
     <div className="space-y-4">

@@ -45,8 +45,8 @@ const Dashboard = () => {
          {/* Common Widget for Everyone */}
          <HighPriorityProductsWidget selectedMarketplaceId={selectedMarketplaceId} />
 
-         {/* Ops & Admin Widgets */}
-         {(role === 'Admin' || role === 'Ops') && (
+         {/* Operator (admin/editor/collaborator) Widgets */}
+         {(role === 'admin' || role === 'editor' || role === 'collaborator') && (
            <>
              <PipelineSummaryWidget selectedMarketplaceId={selectedMarketplaceId} />
              <TasksDueWidget selectedMarketplaceId={selectedMarketplaceId} />
@@ -56,8 +56,8 @@ const Dashboard = () => {
            </>
          )}
 
-         {/* Finance & Admin Widgets */}
-         {(role === 'Admin' || role === 'Finance') && (
+         {/* Finance Widgets (admin/editor) */}
+         {(role === 'admin' || role === 'editor') && (
            <>
              <FinanceWidget />
              <GrowthWidget />
@@ -65,7 +65,7 @@ const Dashboard = () => {
          )}
          
          {/* Viewer - Show limited summary */}
-         {role === 'Viewer' && (
+         {role === 'viewer' && (
             <>
               <PipelineSummaryWidget selectedMarketplaceId={selectedMarketplaceId} /> 
               <TasksDueWidget selectedMarketplaceId={selectedMarketplaceId} />

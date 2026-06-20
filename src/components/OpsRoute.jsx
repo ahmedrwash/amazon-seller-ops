@@ -1,10 +1,11 @@
 import React from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { ROLES } from '@/constants/roleConstants';
+import { OPERATOR_ROLES } from '@/constants/roleConstants';
 
 export default function OpsRoute({ children }) {
+  // Operators = admin, editor, collaborator
   return (
-    <ProtectedRoute requiredRoles={[ROLES.ADMIN, ROLES.OPS]}>
+    <ProtectedRoute requiredRoles={OPERATOR_ROLES}>
       {children}
     </ProtectedRoute>
   );

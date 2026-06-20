@@ -4,6 +4,8 @@ import { Link, useLocation } from 'react-router-dom';
 import { useSidebarContext } from '@/contexts/SidebarContext';
 import { useAuth } from '@/context/AuthContext';
 import { useRole } from '@/hooks/useRole';
+import { usePermissions } from '@/hooks/usePermissions';
+import { moduleForRoute } from '@/constants/accessModules';
 import { getNavigationItems } from '@/utils/navigationUtils';
 import { cn } from '@/lib/utils';
 import { ChevronDown, ChevronRight, LogOut, X, BarChart3, Users } from 'lucide-react';
@@ -82,6 +84,7 @@ const Sidebar = () => {
   const { isOpen, closeSidebar, expandedSections, toggleSection } = useSidebarContext();
   const { user, signOut, hasOpsHubAccess, userRole, canManageUsers } = useAuth();
   const { role } = useRole();
+  const { can } = usePermissions();
 
   const navItems = useMemo(() => {
     const items = getNavigationItems(role);
@@ -105,8 +108,12 @@ const Sidebar = () => {
       });
     }
 
-    return items;
-  }, [role, hasOpsHubAccess, canManageUsers, userRole]);
+    // Hide pages the user has no per-module view access to (UX only; RLS enforces).
+    return items.filter(item => {
+      const moduleId = moduleForRoute(item.to);
+      return !moduleId || can(moduleId, 'view');
+    });
+  }, [role, hasOpsHubAccess, canManageUsers, userRole, can]);
 
   const groupedItems = navItems.reduce((acc, item) => {
     const section = item.section || 'Main';

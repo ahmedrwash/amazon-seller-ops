@@ -3,8 +3,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/context/AuthContext';
 import { isPrimaryAdmin } from '@/lib/permissions';
-import { 
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
+import { MODULES, ACTION_KEYS, roleModuleDefault } from '@/constants/accessModules';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,37 +20,43 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Search, MoreVertical, ShieldAlert, CheckCircle2, UserCog, User, Users, Info, Shield, Ban, RefreshCw, AlertCircle, WifiOff, UserPlus } from 'lucide-react';
+import { Loader2, Search, MoreVertical, ShieldAlert, CheckCircle2, UserCog, User, Users, Info, Shield, Ban, RefreshCw, AlertCircle, WifiOff, UserPlus, Trash2, RotateCcw, Mail, SlidersHorizontal } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const ROLE_DEFINITIONS = [
-  { id: 'admin', name: 'Admin', description: 'Full access to all system features including user management.', color: 'bg-red-100 text-red-800 border-red-200' },
+  { id: 'admin', name: 'Admin', description: 'Full access to all features, including user management.', color: 'bg-red-100 text-red-800 border-red-200' },
   { id: 'editor', name: 'Editor', description: 'Can create and edit products and operations data.', color: 'bg-blue-100 text-blue-800 border-blue-200' },
-  { id: 'collaborator', name: 'Collaborator', description: 'Can edit specific operational data but cannot create products.', color: 'bg-amber-100 text-amber-800 border-amber-200' },
+  { id: 'collaborator', name: 'Collaborator', description: 'Can edit operational data but cannot create products.', color: 'bg-amber-100 text-amber-800 border-amber-200' },
   { id: 'viewer', name: 'Viewer', description: 'Read-only access to products and data.', color: 'bg-stone-100 text-stone-800 border-stone-200' },
-];
-
-const STATUS_DEFINITIONS = [
-  { id: 'active', name: 'Active', color: 'bg-green-500' },
-  { id: 'inactive', name: 'Inactive', color: 'bg-slate-300' },
-  { id: 'suspended', name: 'Suspended', color: 'bg-red-500' }
 ];
 
 export default function UserManagement() {
   const { userRole, canManageUsers, user, session } = useAuth();
   const { toast } = useToast();
-  
-  const [users, setUsers] = useState([]);
+
+  const [rows, setRows] = useState([]);            // merged profiles + invites
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [fetchError, setFetchError] = useState(null);
-  
-  // Role change modal
+
+  // Role / access modal
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [newRole, setNewRole] = useState('');
+  const [capFinance, setCapFinance] = useState(false);
+  const [capUsers, setCapUsers] = useState(false);
   const [changeReason, setChangeReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Remove-access confirm
+  const [removeTarget, setRemoveTarget] = useState(null);
+  const [isRemoving, setIsRemoving] = useState(false);
+
+  // Page & action access matrix
+  const [accessTarget, setAccessTarget] = useState(null);
+  const [accessMatrix, setAccessMatrix] = useState({}); // { moduleId: {view,create,edit,delete,export} }
+  const [accessLoading, setAccessLoading] = useState(false);
+  const [accessSaving, setAccessSaving] = useState(false);
 
   // Add user modal
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
@@ -58,28 +65,79 @@ export default function UserManagement() {
   const [newUserRole, setNewUserRole] = useState('editor');
   const [isAddingUser, setIsAddingUser] = useState(false);
 
+  // ── Load: merge profiles (source of truth) with pending invites ──────────────
   const fetchUsers = async () => {
     setLoading(true);
     setFetchError(null);
     try {
-      const { data, error } = await supabase
-        .from('user_accounts')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [profRes, invRes] = await Promise.all([
+        supabase.from('profiles')
+          .select('id, email, full_name, role, active, can_manage_users, can_manage_finance, last_login, created_at')
+          .order('created_at', { ascending: false }),
+        supabase.from('user_accounts')
+          .select('id, email, full_name, role, status, auth_id, created_at'),
+      ]);
 
-      if (error) {
-        if (error.code === '42P01' || error.message.includes('does not exist')) {
+      if (profRes.error) {
+        const msg = profRes.error.message || '';
+        if (profRes.error.code === '42P01' || msg.includes('does not exist')) {
           setFetchError('Database tables are missing. Please ensure the migration scripts have run successfully.');
-        } else if (error.message.includes('infinite recursion')) {
+        } else if (msg.includes('infinite recursion')) {
           setFetchError('Database policy error: Infinite recursion detected. Please apply the simplified RLS policies.');
-        } else if (error.message.includes('Failed to fetch') || error.message.includes('network')) {
+        } else if (msg.includes('Failed to fetch') || msg.includes('network')) {
           setFetchError('Network error: Unable to connect to the database. Please check your internet connection.');
         } else {
-          setFetchError(error.message);
+          setFetchError(msg);
         }
-        throw error;
+        throw profRes.error;
       }
-      setUsers(data || []);
+
+      const profiles = profRes.data || [];
+      const invites = invRes.error ? [] : (invRes.data || []);
+
+      const byEmail = new Map();
+      profiles.forEach(p => {
+        const key = (p.email || '').toLowerCase();
+        byEmail.set(key, {
+          key,
+          id: p.id,
+          inviteId: null,
+          email: p.email,
+          full_name: p.full_name,
+          role: p.role || 'viewer',
+          active: p.active !== false,
+          can_manage_users: !!p.can_manage_users,
+          can_manage_finance: !!p.can_manage_finance,
+          last_login: p.last_login,
+          created_at: p.created_at,
+          source: 'profile',
+          status: p.active === false ? 'revoked' : 'active',
+        });
+      });
+      invites.forEach(ua => {
+        const key = (ua.email || '').toLowerCase();
+        if (byEmail.has(key)) {
+          byEmail.get(key).inviteId = ua.id;     // already signed up; keep registry link
+        } else {
+          byEmail.set(key, {
+            key,
+            id: null,
+            inviteId: ua.id,
+            email: ua.email,
+            full_name: ua.full_name,
+            role: ua.role || 'viewer',
+            active: ua.status === 'active',
+            can_manage_users: false,
+            can_manage_finance: false,
+            last_login: null,
+            created_at: ua.created_at,
+            source: 'invite',
+            status: 'invited',
+          });
+        }
+      });
+
+      setRows(Array.from(byEmail.values()));
     } catch (error) {
       console.error('Error fetching users:', error);
       if (!fetchError) {
@@ -98,36 +156,16 @@ export default function UserManagement() {
     }
   }, [user, canManageUsers, userRole]);
 
-  const handleStatusChange = async (userId, newStatus) => {
-    try {
-      const targetUser = users.find(u => u.id === userId);
-      if (targetUser && isPrimaryAdmin(targetUser.email) && newStatus !== 'active') {
-        toast({ title: 'Action blocked', description: 'Primary admin cannot be deactivated or suspended.', variant: 'destructive' });
-        return;
-      }
-
-      const { error } = await supabase
-        .from('user_accounts')
-        .update({ status: newStatus })
-        .eq('id', userId);
-
-      if (error) throw error;
-      
-      toast({ title: `User status changed to ${newStatus}` });
-      setUsers(users.map(u => u.id === userId ? { ...u, status: newStatus } : u));
-    } catch (error) {
-      console.error('Error updating status:', error);
-      toast({ title: 'Error updating status', description: error.message, variant: 'destructive' });
-    }
-  };
-
+  // ── Role + capability changes ────────────────────────────────────────────────
   const openRoleModal = (u) => {
     if (isPrimaryAdmin(u.email)) {
-      toast({ title: 'Action blocked', description: 'Primary admin role cannot be changed.', variant: 'destructive' });
+      toast({ title: 'Action blocked', description: 'The primary admin account cannot be modified.', variant: 'destructive' });
       return;
     }
     setSelectedUser(u);
-    setNewRole(u.role || 'editor');
+    setNewRole(u.role || 'viewer');
+    setCapFinance(!!u.can_manage_finance);
+    setCapUsers(!!u.can_manage_users);
     setChangeReason('');
     setIsRoleModalOpen(true);
   };
@@ -135,34 +173,35 @@ export default function UserManagement() {
   const handleRoleChange = async () => {
     if (!selectedUser || !newRole) return;
     setIsSubmitting(true);
-    
     try {
       const oldRole = selectedUser.role;
-      
-      const { error: updateError } = await supabase
-        .from('user_accounts')
-        .update({ role: newRole })
-        .eq('id', selectedUser.id);
-        
-      if (updateError) throw updateError;
-      
-      const { error: historyError } = await supabase
-        .from('user_role_history')
-        .insert({
+
+      if (selectedUser.source === 'profile' && selectedUser.id) {
+        const { error } = await supabase.from('profiles')
+          .update({ role: newRole, can_manage_finance: capFinance, can_manage_users: capUsers })
+          .eq('id', selectedUser.id);
+        if (error) throw error;
+
+        if (selectedUser.inviteId) {
+          await supabase.from('user_accounts').update({ role: newRole }).eq('id', selectedUser.inviteId);
+        }
+
+        const { error: histErr } = await supabase.from('user_role_history').insert({
           user_id: selectedUser.id,
           old_role: oldRole,
           new_role: newRole,
           changed_by: user.id,
-          reason: changeReason
+          reason: changeReason,
         });
-        
-      if (historyError) {
-        console.warn('Failed to log role history, but role was updated:', historyError);
+        if (histErr) console.warn('Role history not logged:', histErr.message);
+      } else if (selectedUser.inviteId) {
+        const { error } = await supabase.from('user_accounts').update({ role: newRole }).eq('id', selectedUser.inviteId);
+        if (error) throw error;
       }
-      
-      toast({ title: 'Role updated successfully' });
-      setUsers(users.map(u => u.id === selectedUser.id ? { ...u, role: newRole } : u));
+
+      toast({ title: 'Access updated successfully' });
       setIsRoleModalOpen(false);
+      await fetchUsers();
     } catch (error) {
       console.error('Error changing role:', error);
       toast({ title: 'Error changing role', description: error.message, variant: 'destructive' });
@@ -171,6 +210,164 @@ export default function UserManagement() {
     }
   };
 
+  // ── Activate / revoke access ─────────────────────────────────────────────────
+  const handleToggleActive = async (u, active) => {
+    if (isPrimaryAdmin(u.email) && !active) {
+      toast({ title: 'Action blocked', description: 'The primary admin cannot be revoked.', variant: 'destructive' });
+      return;
+    }
+    try {
+      if (u.source === 'profile' && u.id) {
+        const { error } = await supabase.from('profiles').update({ active }).eq('id', u.id);
+        if (error) throw error;
+        if (u.inviteId) {
+          await supabase.from('user_accounts').update({ status: active ? 'active' : 'suspended' }).eq('id', u.inviteId);
+        }
+      } else if (u.inviteId) {
+        const { error } = await supabase.from('user_accounts').update({ status: active ? 'active' : 'suspended' }).eq('id', u.inviteId);
+        if (error) throw error;
+      }
+      toast({ title: active ? 'Access restored' : 'Access revoked' });
+      await fetchUsers();
+    } catch (error) {
+      toast({ title: 'Error updating access', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  // ── Remove (delete invite, or revoke + delete registry row) ──────────────────
+  const handleRemove = async () => {
+    const u = removeTarget;
+    if (!u) return;
+    setIsRemoving(true);
+    try {
+      if (u.source === 'profile' && u.id) {
+        // Can't delete the auth user from the client — revoke access durably.
+        const { error } = await supabase.from('profiles').update({ active: false }).eq('id', u.id);
+        if (error) throw error;
+      }
+      if (u.inviteId) {
+        await supabase.from('user_accounts').delete().eq('id', u.inviteId);
+      }
+      toast({
+        title: u.source === 'profile' ? 'Access revoked' : 'Invite deleted',
+        description: u.source === 'profile'
+          ? 'The user can no longer sign in. Delete the auth account from Supabase to remove it entirely.'
+          : undefined,
+      });
+      setRemoveTarget(null);
+      await fetchUsers();
+    } catch (error) {
+      toast({ title: 'Error removing access', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsRemoving(false);
+    }
+  };
+
+  // ── Page & action access (per-user overrides) ────────────────────────────────
+  const openAccessModal = async (u) => {
+    if (isPrimaryAdmin(u.email) || u.role === 'admin') {
+      toast({ title: 'Full access', description: 'Admins already have access to everything.', variant: 'destructive' });
+      return;
+    }
+    if (u.source !== 'profile' || !u.id) {
+      toast({ title: 'User must sign up first', description: 'Page/action access can be set once they have an account.', variant: 'destructive' });
+      return;
+    }
+    setAccessTarget(u);
+    setAccessLoading(true);
+    setAccessMatrix({});
+    try {
+      const { data } = await supabase.from('user_module_permissions')
+        .select('module_id, can_view, can_create, can_edit, can_delete, can_export')
+        .eq('user_id', u.id);
+      const overrides = {};
+      (data || []).forEach(r => { overrides[r.module_id] = r; });
+      const matrix = {};
+      MODULES.forEach(m => {
+        const def = roleModuleDefault(m, u.role || 'viewer', u);
+        const ov = overrides[m.id];
+        matrix[m.id] = ov ? {
+          view: ov.can_view ?? def.view,
+          create: ov.can_create ?? def.create,
+          edit: ov.can_edit ?? def.edit,
+          delete: ov.can_delete ?? def.delete,
+          export: ov.can_export ?? def.export,
+        } : { ...def };
+      });
+      setAccessMatrix(matrix);
+    } catch (err) {
+      toast({ title: 'Error loading access', description: err.message, variant: 'destructive' });
+    } finally {
+      setAccessLoading(false);
+    }
+  };
+
+  const toggleCell = (moduleId, action) => {
+    setAccessMatrix(prev => ({ ...prev, [moduleId]: { ...prev[moduleId], [action]: !prev[moduleId]?.[action] } }));
+  };
+
+  const saveAccess = async () => {
+    if (!accessTarget) return;
+    setAccessSaving(true);
+    try {
+      // Only store rows that differ from the role default; delete the rest so
+      // future role changes still flow through for untouched modules.
+      const toUpsert = [];
+      const toDelete = [];
+      MODULES.forEach(m => {
+        const def = roleModuleDefault(m, accessTarget.role || 'viewer', accessTarget);
+        const cur = accessMatrix[m.id] || def;
+        const differs = ACTION_KEYS.some(a => !!cur[a] !== !!def[a]);
+        if (differs) {
+          toUpsert.push({
+            user_id: accessTarget.id,
+            module_id: m.id,
+            can_view: !!cur.view,
+            can_create: !!cur.create,
+            can_edit: !!cur.edit,
+            can_delete: !!cur.delete,
+            can_export: !!cur.export,
+            updated_by: user.id,
+            updated_at: new Date().toISOString(),
+          });
+        } else {
+          toDelete.push(m.id);
+        }
+      });
+      if (toUpsert.length) {
+        const { error } = await supabase.from('user_module_permissions')
+          .upsert(toUpsert, { onConflict: 'user_id,module_id' });
+        if (error) throw error;
+      }
+      if (toDelete.length) {
+        await supabase.from('user_module_permissions')
+          .delete().eq('user_id', accessTarget.id).in('module_id', toDelete);
+      }
+      toast({ title: 'Access saved', description: `${toUpsert.length} custom override(s) for ${accessTarget.email}.` });
+      setAccessTarget(null);
+    } catch (err) {
+      toast({ title: 'Error saving access', description: err.message, variant: 'destructive' });
+    } finally {
+      setAccessSaving(false);
+    }
+  };
+
+  const resetAccess = async () => {
+    if (!accessTarget) return;
+    setAccessSaving(true);
+    try {
+      const { error } = await supabase.from('user_module_permissions').delete().eq('user_id', accessTarget.id);
+      if (error) throw error;
+      toast({ title: 'Reset to role defaults' });
+      setAccessTarget(null);
+    } catch (err) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setAccessSaving(false);
+    }
+  };
+
+  // ── Add user (pre-registration / invite) ─────────────────────────────────────
   const handleAddUser = async () => {
     if (!newUserEmail.trim()) return;
     setIsAddingUser(true);
@@ -182,20 +379,20 @@ export default function UserManagement() {
         status: 'active',
       });
       if (error) throw error;
-      toast({ title: 'User added', description: `${newUserEmail} has been pre-registered as ${newUserRole}. They can now sign up and will get this role automatically.` });
+      toast({ title: 'User invited', description: `${newUserEmail} is pre-registered as ${newUserRole}. The role applies automatically when they sign up.` });
       setIsAddUserOpen(false);
       setNewUserEmail('');
       setNewUserName('');
       setNewUserRole('editor');
       await fetchUsers();
     } catch (err) {
-      toast({ title: 'Error adding user', description: err.message, variant: 'destructive' });
+      toast({ title: 'Error inviting user', description: err.message, variant: 'destructive' });
     } finally {
       setIsAddingUser(false);
     }
   };
 
-  const filteredUsers = users.filter(u =>
+  const filteredUsers = rows.filter(u =>
     (u.email && u.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
     (u.full_name && u.full_name.toLowerCase().includes(searchQuery.toLowerCase()))
   );
@@ -207,12 +404,12 @@ export default function UserManagement() {
 
   const stats = useMemo(() => {
     const counts = { admin: 0, editor: 0, collaborator: 0, viewer: 0 };
-    users.forEach(u => {
+    rows.forEach(u => {
       const r = u.role || 'viewer';
       if (counts[r] !== undefined) counts[r]++;
     });
     return counts;
-  }, [users]);
+  }, [rows]);
 
   // Auth Check
   if (!user || !session) {
@@ -228,7 +425,6 @@ export default function UserManagement() {
     );
   }
 
-  // Loading Check
   if (loading) {
     return (
       <div className="flex h-[50vh] flex-col items-center justify-center text-center space-y-4">
@@ -238,7 +434,6 @@ export default function UserManagement() {
     );
   }
 
-  // Admin Check
   if (!canManageUsers && userRole !== 'admin') {
     return (
       <div className="flex h-[80vh] flex-col items-center justify-center text-center p-8 bg-[hsl(var(--parchment))]">
@@ -260,10 +455,10 @@ export default function UserManagement() {
             <Users className="h-8 w-8 text-[hsl(var(--terracotta))]" />
             User Management
           </h1>
-          <p className="text-slate-500 mt-1">Manage user roles, permissions, and account statuses.</p>
+          <p className="text-slate-500 mt-1">Manage roles, access, and capabilities. Roles take effect immediately.</p>
         </div>
         <Button onClick={() => setIsAddUserOpen(true)} className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white">
-          <UserPlus className="h-4 w-4 mr-2" /> Add User
+          <UserPlus className="h-4 w-4 mr-2" /> Invite User
         </Button>
       </div>
 
@@ -280,19 +475,18 @@ export default function UserManagement() {
 
       {!fetchError && (
         <>
-          {/* Admin Info Box */}
           <div className="bg-blue-50 border border-blue-200 text-blue-800 rounded-xl p-4 mb-6 flex gap-3 shadow-sm">
             <Info className="h-5 w-5 flex-shrink-0 mt-0.5 text-blue-600" />
             <div>
               <h3 className="font-semibold mb-1">Administrator Privileges Active</h3>
               <p className="text-sm opacity-90">
-                You can modify the roles and access levels of all users in the system. Changes are recorded in the audit trail.
-                The primary admin account cannot be demoted, deactivated, or suspended.
+                Roles (<strong>admin / editor / collaborator / viewer</strong>) and the <strong>Finance</strong>/<strong>User-management</strong> capabilities
+                are enforced everywhere immediately. Changes are recorded in the audit trail. The primary admin account cannot be modified.
               </p>
             </div>
           </div>
 
-          {/* Stats Cards */}
+          {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <div className="bg-white p-4 rounded-xl border border-[hsl(var(--border))] shadow-sm flex flex-col items-center justify-center">
               <ShieldAlert className="h-6 w-6 text-red-500 mb-2" />
@@ -333,8 +527,8 @@ export default function UserManagement() {
             <div className="p-4 border-b border-[hsl(var(--border))] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50/50">
               <div className="relative w-full sm:w-80">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <Input 
-                  placeholder="Search users by name or email..." 
+                <Input
+                  placeholder="Search users by name or email..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-9 bg-white"
@@ -356,8 +550,8 @@ export default function UserManagement() {
                   <TableRow>
                     <TableHead className="min-w-[250px]">User Details</TableHead>
                     <TableHead>Role</TableHead>
+                    <TableHead>Capabilities</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Joined</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -371,10 +565,8 @@ export default function UserManagement() {
                   ) : (
                     filteredUsers.map((u) => {
                       const isPrimary = isPrimaryAdmin(u.email);
-                      const statusDef = STATUS_DEFINITIONS.find(s => s.id === (u.status || 'active'));
-                      
                       return (
-                        <TableRow key={u.id}>
+                        <TableRow key={u.key}>
                           <TableCell>
                             <div className="flex items-center gap-3">
                               <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
@@ -383,7 +575,7 @@ export default function UserManagement() {
                               <div className="min-w-0">
                                 <div className="font-medium text-slate-900 flex flex-wrap items-center gap-2">
                                   <span className="truncate max-w-[200px]">{u.full_name || 'No Name Provided'}</span>
-                                  {isPrimary && <Badge variant="secondary" className="bg-purple-100 text-purple-800 hover:bg-purple-200 whitespace-nowrap"><Shield className="w-3 h-3 mr-1"/> Primary Admin</Badge>}
+                                  {isPrimary && <Badge variant="secondary" className="bg-purple-100 text-purple-800 hover:bg-purple-200 whitespace-nowrap"><Shield className="w-3 h-3 mr-1" /> Primary Admin</Badge>}
                                 </div>
                                 <div className="text-sm text-slate-500 truncate">{u.email}</div>
                               </div>
@@ -395,13 +587,22 @@ export default function UserManagement() {
                             </span>
                           </TableCell>
                           <TableCell>
-                            <div className="flex items-center gap-1.5 whitespace-nowrap">
-                              <div className={`h-2 w-2 rounded-full ${statusDef?.color || 'bg-slate-300'}`} />
-                              <span className="text-sm capitalize text-slate-700">{u.status || 'active'}</span>
+                            <div className="flex flex-wrap gap-1">
+                              {u.can_manage_finance && <Badge variant="secondary" className="bg-green-100 text-green-800 whitespace-nowrap">Finance</Badge>}
+                              {u.can_manage_users && <Badge variant="secondary" className="bg-purple-100 text-purple-800 whitespace-nowrap">Users</Badge>}
+                              {!u.can_manage_finance && !u.can_manage_users && <span className="text-xs text-slate-400">—</span>}
                             </div>
                           </TableCell>
-                          <TableCell className="text-slate-500 text-sm whitespace-nowrap">
-                            {u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Unknown'}
+                          <TableCell>
+                            <div className="flex items-center gap-1.5 whitespace-nowrap">
+                              {u.status === 'invited' ? (
+                                <><Mail className="h-3.5 w-3.5 text-blue-400" /><span className="text-sm text-blue-600">Invited</span></>
+                              ) : u.status === 'revoked' ? (
+                                <><div className="h-2 w-2 rounded-full bg-red-500" /><span className="text-sm text-red-600">Revoked</span></>
+                              ) : (
+                                <><div className="h-2 w-2 rounded-full bg-green-500" /><span className="text-sm text-slate-700">Active</span></>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-right">
                             <DropdownMenu>
@@ -412,29 +613,30 @@ export default function UserManagement() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-48">
                                 <DropdownMenuItem onClick={() => openRoleModal(u)} disabled={isPrimary}>
-                                  <UserCog className="h-4 w-4 mr-2" /> Change Role
+                                  <UserCog className="h-4 w-4 mr-2" /> Edit Role &amp; Access
                                 </DropdownMenuItem>
-                                
+                                <DropdownMenuItem onClick={() => openAccessModal(u)} disabled={isPrimary || u.role === 'admin' || u.source !== 'profile'}>
+                                  <SlidersHorizontal className="h-4 w-4 mr-2" /> Page &amp; Action Access
+                                </DropdownMenuItem>
+
                                 <div className="h-px bg-slate-200 my-1 mx-2" />
-                                
-                                <DropdownMenuItem 
-                                  onClick={() => handleStatusChange(u.id, 'active')}
-                                  disabled={isPrimary || u.status === 'active'}
-                                >
-                                  <CheckCircle2 className="h-4 w-4 mr-2 text-green-500" /> Set Active
-                                </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  onClick={() => handleStatusChange(u.id, 'inactive')}
-                                  disabled={isPrimary || u.status === 'inactive'}
-                                >
-                                  <User className="h-4 w-4 mr-2 text-slate-500" /> Set Inactive
-                                </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  onClick={() => handleStatusChange(u.id, 'suspended')}
-                                  disabled={isPrimary || u.status === 'suspended'}
+
+                                {u.status === 'revoked' || (u.status === 'invited' && !u.active) ? (
+                                  <DropdownMenuItem onClick={() => handleToggleActive(u, true)} disabled={isPrimary}>
+                                    <RotateCcw className="h-4 w-4 mr-2 text-green-500" /> Restore Access
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem onClick={() => handleToggleActive(u, false)} disabled={isPrimary}>
+                                    <Ban className="h-4 w-4 mr-2 text-amber-500" /> Revoke Access
+                                  </DropdownMenuItem>
+                                )}
+
+                                <DropdownMenuItem
+                                  onClick={() => setRemoveTarget(u)}
+                                  disabled={isPrimary}
                                   className="text-red-600 focus:text-red-700 focus:bg-red-50"
                                 >
-                                  <Ban className="h-4 w-4 mr-2" /> Suspend User
+                                  <Trash2 className="h-4 w-4 mr-2" /> {u.source === 'invite' ? 'Delete Invite' : 'Remove User'}
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -450,13 +652,13 @@ export default function UserManagement() {
         </>
       )}
 
-      {/* Add User Dialog */}
+      {/* Invite User Dialog */}
       <Dialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Add New User</DialogTitle>
+            <DialogTitle>Invite New User</DialogTitle>
             <DialogDescription>
-              Pre-register a user by email. Their role will be set immediately. When they sign up, they'll be linked automatically.
+              Pre-register a user by email and assign a role. When they sign up, the role is applied automatically.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -464,7 +666,7 @@ export default function UserManagement() {
               <Label>Email Address *</Label>
               <Input
                 type="email"
-                placeholder="neemat@example.com"
+                placeholder="name@example.com"
                 value={newUserEmail}
                 onChange={(e) => setNewUserEmail(e.target.value)}
               />
@@ -472,7 +674,7 @@ export default function UserManagement() {
             <div className="space-y-2">
               <Label>Full Name (optional)</Label>
               <Input
-                placeholder="Neemat Ahmed"
+                placeholder="Full name"
                 value={newUserName}
                 onChange={(e) => setNewUserName(e.target.value)}
               />
@@ -500,24 +702,25 @@ export default function UserManagement() {
               className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white"
             >
               {isAddingUser ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
-              Add User
+              Invite User
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* Edit Role & Access Dialog */}
       <Dialog open={isRoleModalOpen} onOpenChange={setIsRoleModalOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[460px]">
           <DialogHeader>
-            <DialogTitle>Change User Role</DialogTitle>
+            <DialogTitle>Edit Role &amp; Access</DialogTitle>
             <DialogDescription>
-              Update system permissions for <span className="font-medium text-slate-900">{selectedUser?.email}</span>
+              Update permissions for <span className="font-medium text-slate-900">{selectedUser?.email}</span>
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Select Role</Label>
+              <Label>Role</Label>
               <Select value={newRole} onValueChange={setNewRole}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select a role" />
@@ -537,13 +740,34 @@ export default function UserManagement() {
               )}
             </div>
 
+            {/* Capability flags (only meaningful for signed-up users) */}
             <div className="space-y-2">
-              <Label>Reason for change (Required for audit trail)</Label>
-              <Textarea 
+              <Label>Extra Capabilities</Label>
+              {selectedUser?.source === 'profile' ? (
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                    <input type="checkbox" className="h-4 w-4 rounded border-slate-300"
+                      checked={capFinance} onChange={(e) => setCapFinance(e.target.checked)} />
+                    Finance access (view Finance &amp; Growth, regardless of role)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                    <input type="checkbox" className="h-4 w-4 rounded border-slate-300"
+                      checked={capUsers} onChange={(e) => setCapUsers(e.target.checked)} />
+                    User management (manage other users)
+                  </label>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400">Capabilities can be set once the user has signed up.</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Reason for change (required for audit trail)</Label>
+              <Textarea
                 placeholder="e.g. Promoted to operations manager"
                 value={changeReason}
                 onChange={(e) => setChangeReason(e.target.value)}
-                rows={3}
+                rows={2}
                 className="resize-none"
               />
             </div>
@@ -551,10 +775,109 @@ export default function UserManagement() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsRoleModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleRoleChange} disabled={isSubmitting || newRole === selectedUser?.role || !changeReason.trim()}>
+            <Button
+              onClick={handleRoleChange}
+              disabled={
+                isSubmitting ||
+                !changeReason.trim() ||
+                (newRole === selectedUser?.role &&
+                 capFinance === !!selectedUser?.can_manage_finance &&
+                 capUsers === !!selectedUser?.can_manage_users)
+              }
+            >
               {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Save Changes
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove / Revoke confirm */}
+      <Dialog open={!!removeTarget} onOpenChange={(o) => !o && setRemoveTarget(null)}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>{removeTarget?.source === 'invite' ? 'Delete Invite' : 'Remove User'}</DialogTitle>
+            <DialogDescription>
+              {removeTarget?.source === 'invite' ? (
+                <>This will delete the pending invite for <span className="font-medium text-slate-900">{removeTarget?.email}</span>.</>
+              ) : (
+                <>This will revoke all access for <span className="font-medium text-slate-900">{removeTarget?.email}</span>. They will be signed out and blocked from the app. The login account itself must be deleted from the Supabase dashboard to remove it permanently.</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveTarget(null)}>Cancel</Button>
+            <Button onClick={handleRemove} disabled={isRemoving} className="bg-red-600 hover:bg-red-700 text-white">
+              {isRemoving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              {removeTarget?.source === 'invite' ? 'Delete Invite' : 'Revoke Access'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Page & Action Access matrix */}
+      <Dialog open={!!accessTarget} onOpenChange={(o) => !o && setAccessTarget(null)}>
+        <DialogContent className="sm:max-w-[640px]">
+          <DialogHeader>
+            <DialogTitle>Page &amp; Action Access</DialogTitle>
+            <DialogDescription>
+              Fine-tune what <span className="font-medium text-slate-900">{accessTarget?.email}</span> can see and do, on top of their
+              <span className="capitalize"> {accessTarget?.role}</span> role. Unchecking a page hides it; leaving everything at the role default keeps it role-driven.
+            </DialogDescription>
+          </DialogHeader>
+
+          {accessLoading ? (
+            <div className="py-10 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-[hsl(var(--terracotta))]" /></div>
+          ) : (
+            <div className="max-h-[55vh] overflow-y-auto overflow-x-auto -mx-1 px-1">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-white">
+                  <tr className="text-xs text-slate-500 border-b border-slate-200">
+                    <th className="text-left font-medium py-2 pr-2">Module</th>
+                    {['view', 'create', 'edit', 'delete', 'export'].map(c => (
+                      <th key={c} className="font-medium py-2 px-2 text-center capitalize">{c}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {MODULES.map(m => (
+                    <tr key={m.id} className="border-b border-slate-100">
+                      <td className="py-2 pr-2 text-slate-700">{m.label}</td>
+                      {['view', 'create', 'edit', 'delete', 'export'].map(col => {
+                        const supported = col === 'view' || !!m.actions?.[col];
+                        return (
+                          <td key={col} className="py-2 px-2 text-center">
+                            {supported ? (
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-slate-300 accent-[hsl(var(--terracotta))]"
+                                checked={!!accessMatrix[m.id]?.[col]}
+                                onChange={() => toggleCell(m.id, col)}
+                              />
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <DialogFooter className="flex-col sm:flex-row sm:justify-between gap-2">
+            <Button variant="ghost" onClick={resetAccess} disabled={accessSaving} className="text-slate-500">
+              <RotateCcw className="h-4 w-4 mr-2" /> Reset to role defaults
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setAccessTarget(null)}>Cancel</Button>
+              <Button onClick={saveAccess} disabled={accessSaving || accessLoading} className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white">
+                {accessSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Save Access
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

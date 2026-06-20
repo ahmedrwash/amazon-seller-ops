@@ -13,7 +13,7 @@ import { Save, Check, Play, XCircle, AlertCircle } from 'lucide-react';
 
 const MappingEditor = ({ email, mapping, onSave, onApprove, onApply, onReject }) => {
   const { profile } = useAuth();
-  const isAdmin = profile?.role === 'Admin';
+  const isAdmin = profile?.role === 'admin';
 
   const [localMapping, setLocalMapping] = useState({
     target_module: '',
