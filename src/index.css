@@ -1,0 +1,166 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&family=DM+Serif+Display:ital@0;1&family=Outfit:wght@100..900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 30% 95%; /* parchment */
+    --foreground: 210 20% 15%; /* cinder */
+    
+    --card: 0 0% 100%;
+    --card-foreground: 210 20% 15%;
+    
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 20% 15%;
+    
+    --primary: 210 20% 15%; /* cinder */
+    --primary-foreground: 40 30% 95%;
+    
+    --secondary: 220 13% 91%; /* stone */
+    --secondary-foreground: 210 20% 15%;
+    
+    --muted: 220 13% 96%; /* stone-light */
+    --muted-foreground: 210 20% 40%;
+    
+    --accent: 15 70% 50%; /* terracotta */
+    --accent-foreground: 0 0% 100%;
+    
+    --destructive: 0 84% 60%; /* red */
+    --destructive-foreground: 0 0% 100%;
+    
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 15 70% 50%;
+    
+    --radius: 14px;
+
+    /* LARTIA Custom Brand Tokens */
+    --terracotta: 15 70% 50%;
+    --terracotta-light: 15 70% 90%;
+    --cinder: 210 20% 15%;
+    --parchment: 40 30% 95%;
+    --stone: 220 13% 91%;
+    --stone-light: 220 13% 96%;
+    --green: 142 71% 45%;
+    --green-light: 142 71% 90%;
+    --red: 0 84% 60%;
+    --red-light: 0 84% 94%;
+    --gold: 45 93% 47%;
+    --gold-light: 45 93% 90%;
+    
+    /* Roles and Statuses Tokens for User Management */
+    --role-admin-bg: 0 84% 94%;
+    --role-admin-text: 0 84% 45%;
+    --role-admin-border: 0 84% 80%;
+    
+    --role-editor-bg: 210 100% 94%;
+    --role-editor-text: 210 100% 45%;
+    --role-editor-border: 210 100% 80%;
+    
+    --role-collaborator-bg: 45 93% 90%;
+    --role-collaborator-text: 45 93% 35%;
+    --role-collaborator-border: 45 93% 70%;
+    
+    --role-viewer-bg: 220 13% 91%;
+    --role-viewer-text: 210 20% 40%;
+    --role-viewer-border: 220 13% 80%;
+    
+    --status-active-bg: 142 71% 90%;
+    --status-active-text: 142 71% 35%;
+    --status-active-border: 142 71% 75%;
+    
+    --status-inactive-bg: 220 13% 91%;
+    --status-inactive-text: 210 20% 40%;
+    --status-inactive-border: 220 13% 80%;
+    
+    --status-suspended-bg: 0 84% 94%;
+    --status-suspended-text: 0 84% 45%;
+    --status-suspended-border: 0 84% 80%;
+  }
+
+  .dark {
+    --background: 210 20% 15%;
+    --foreground: 40 30% 95%;
+    --card: 210 20% 18%;
+    --card-foreground: 40 30% 95%;
+    --popover: 210 20% 18%;
+    --popover-foreground: 40 30% 95%;
+    --primary: 40 30% 95%;
+    --primary-foreground: 210 20% 15%;
+    --secondary: 210 20% 25%;
+    --secondary-foreground: 40 30% 95%;
+    --muted: 210 20% 20%;
+    --muted-foreground: 220 13% 70%;
+    --accent: 15 70% 50%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 20% 25%;
+    --input: 210 20% 25%;
+    --ring: 15 70% 50%;
+
+    --role-admin-bg: 0 84% 20%;
+    --role-admin-text: 0 84% 80%;
+    --role-admin-border: 0 84% 40%;
+
+    --role-editor-bg: 210 100% 20%;
+    --role-editor-text: 210 100% 80%;
+    --role-editor-border: 210 100% 40%;
+
+    --role-collaborator-bg: 45 93% 20%;
+    --role-collaborator-text: 45 93% 80%;
+    --role-collaborator-border: 45 93% 40%;
+
+    --role-viewer-bg: 210 20% 25%;
+    --role-viewer-text: 220 13% 80%;
+    --role-viewer-border: 210 20% 40%;
+
+    --status-active-bg: 142 71% 20%;
+    --status-active-text: 142 71% 80%;
+    --status-active-border: 142 71% 40%;
+
+    --status-inactive-bg: 210 20% 25%;
+    --status-inactive-text: 220 13% 80%;
+    --status-inactive-border: 210 20% 40%;
+
+    --status-suspended-bg: 0 84% 20%;
+    --status-suspended-text: 0 84% 80%;
+    --status-suspended-border: 0 84% 40%;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+    font-family: 'Outfit', sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'DM Serif Display', serif;
+  }
+}
+
+@layer utilities {
+  .font-heading {
+    font-family: 'DM Serif Display', serif;
+  }
+  .font-body {
+    font-family: 'Outfit', sans-serif;
+  }
+  .font-mono-num {
+    font-family: 'DM Mono', monospace;
+  }
+  
+  .pill-green {
+    @apply bg-[hsl(var(--green-light))] text-[hsl(var(--green))] font-medium px-2.5 py-0.5 rounded-full text-xs font-mono-num border border-[hsl(var(--green))]/20;
+  }
+  .pill-gold {
+    @apply bg-[hsl(var(--gold-light))] text-[hsl(var(--gold))] font-medium px-2.5 py-0.5 rounded-full text-xs font-mono-num border border-[hsl(var(--gold))]/20;
+  }
+  .pill-red {
+    @apply bg-[hsl(var(--red-light))] text-[hsl(var(--red))] font-medium px-2.5 py-0.5 rounded-full text-xs font-mono-num border border-[hsl(var(--red))]/20;
+  }
+  .pill-stone {
+    @apply bg-[hsl(var(--stone))] text-[hsl(var(--cinder))] font-medium px-2.5 py-0.5 rounded-full text-xs font-mono-num border border-[hsl(var(--cinder))]/10;
+  }
+}
