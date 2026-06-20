@@ -208,7 +208,7 @@ export default function App() {
 
                   {/* Admin */}
                   <Route path="/user-management" element={
-                    <ProtectedRoute>
+                    <ProtectedRoute requiredPermission="canManageUsers">
                       <MainLayout>
                         <UserManagement />
                       </MainLayout>

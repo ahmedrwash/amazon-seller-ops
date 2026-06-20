@@ -4,35 +4,42 @@ import { supabase } from './customSupabaseClient';
 const roleCache = new Map();
 
 export function isPrimaryAdmin(email) {
-  return email === 'ahmedrwash@hotmail.com';
+  return !!email && email.toLowerCase() === 'ahmedrwash@gmail.com';
 }
 
 export async function getUserRole(userId) {
   if (!userId) return 'viewer';
-  
+
   if (roleCache.has(userId)) {
     return roleCache.get(userId);
   }
-  
+
   try {
+    // profiles is the single source of truth (also enforced by RLS).
     const { data, error } = await supabase
-      .from('user_accounts')
-      .select('role, email')
-      .eq('auth_id', userId)
-      .single();
-      
+      .from('profiles')
+      .select('role, email, active')
+      .eq('id', userId)
+      .maybeSingle();
+
     if (error) {
-      console.warn(`[Permissions] Error fetching role for user ${userId}, falling back to 'editor':`, error.message);
-      return 'editor';
+      // Fail closed: never grant edit rights on an error.
+      console.warn(`[Permissions] Error fetching role for ${userId}, defaulting to 'viewer':`, error.message);
+      return 'viewer';
     }
-    
-    // Auto-override if primary admin
-    const role = isPrimaryAdmin(data?.email) ? 'admin' : (data?.role || 'editor');
+
+    // Inactive accounts have no effective role.
+    if (data && data.active === false && !isPrimaryAdmin(data?.email)) {
+      roleCache.set(userId, 'viewer');
+      return 'viewer';
+    }
+
+    const role = isPrimaryAdmin(data?.email) ? 'admin' : (data?.role || 'viewer');
     roleCache.set(userId, role);
     return role;
   } catch (error) {
-    console.warn('[Permissions] Exception in getUserRole, falling back to editor:', error);
-    return 'editor';
+    console.warn('[Permissions] Exception in getUserRole, defaulting to viewer:', error);
+    return 'viewer';
   }
 }
 

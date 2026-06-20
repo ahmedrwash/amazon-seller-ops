@@ -11,9 +11,9 @@ export function hasPermission(role, permission) {
 
 export function formatRole(role) {
   switch (role) {
-    case ROLES.ADMIN: return 'Administrator';
-    case ROLES.OPS: return 'Operations';
-    case ROLES.FINANCE: return 'Finance';
+    case ROLES.ADMIN: return 'Admin';
+    case ROLES.EDITOR: return 'Editor';
+    case ROLES.COLLABORATOR: return 'Collaborator';
     case ROLES.VIEWER: return 'Viewer';
     default: return role || 'Unknown';
   }

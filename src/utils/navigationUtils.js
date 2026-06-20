@@ -15,96 +15,98 @@ import {
   Users2,
   FlaskConical
 } from 'lucide-react';
-import { ROLES } from '@/constants/roleConstants';
+import { ROLES, OPERATOR_ROLES } from '@/constants/roleConstants';
 
 export function getNavigationItems(role) {
   // Define all possible items in desired order
   // Sections: Main (null), Operations, Compliance & Quality, Finance, Supply Chain, Service Providers, Intake, Admin
-  
+
+  const ALL_ROLES = [ROLES.ADMIN, ROLES.EDITOR, ROLES.COLLABORATOR, ROLES.VIEWER];
+
   const allItems = [
-    { 
-      to: "/dashboard", 
-      label: "Dashboard", 
-      icon: LayoutDashboard, 
-      section: null, 
-      roles: [ROLES.ADMIN, ROLES.OPS, ROLES.FINANCE, ROLES.VIEWER] 
+    {
+      to: "/dashboard",
+      label: "Dashboard",
+      icon: LayoutDashboard,
+      section: null,
+      roles: ALL_ROLES
     },
-    { 
-      to: "/products", 
-      label: "Products", 
-      icon: ShoppingBag, 
-      section: "Operations", 
-      roles: [ROLES.ADMIN, ROLES.OPS, ROLES.FINANCE, ROLES.VIEWER] 
+    {
+      to: "/products",
+      label: "Products",
+      icon: ShoppingBag,
+      section: "Operations",
+      roles: ALL_ROLES
     },
-    { 
-      to: "/pipeline", 
-      label: "Pipeline", 
-      icon: GitPullRequest, 
-      section: "Operations", 
-      roles: [ROLES.ADMIN, ROLES.OPS] 
+    {
+      to: "/pipeline",
+      label: "Pipeline",
+      icon: GitPullRequest,
+      section: "Operations",
+      roles: OPERATOR_ROLES
     },
-    { 
-      to: "/tasks", 
-      label: "Tasks", 
-      icon: CheckSquare, 
-      section: "Operations", 
-      roles: [ROLES.ADMIN, ROLES.OPS] 
+    {
+      to: "/tasks",
+      label: "Tasks",
+      icon: CheckSquare,
+      section: "Operations",
+      roles: OPERATOR_ROLES
     },
-    { 
-      to: "/inventory", 
-      label: "Inventory", 
-      icon: Package, 
-      section: "Operations", 
-      roles: [ROLES.ADMIN, ROLES.OPS] 
+    {
+      to: "/inventory",
+      label: "Inventory",
+      icon: Package,
+      section: "Operations",
+      roles: OPERATOR_ROLES
     },
-    { 
-      to: "/compliance", 
-      label: "Compliance", 
-      icon: ShieldCheck, 
-      section: "Compliance & Quality", 
-      roles: [ROLES.ADMIN, ROLES.OPS] 
+    {
+      to: "/compliance",
+      label: "Compliance",
+      icon: ShieldCheck,
+      section: "Compliance & Quality",
+      roles: OPERATOR_ROLES
     },
-    { 
-      to: "/finance", 
-      label: "Finance", 
-      icon: DollarSign, 
-      section: "Finance", 
-      roles: [ROLES.ADMIN, ROLES.FINANCE] 
+    {
+      to: "/finance",
+      label: "Finance",
+      icon: DollarSign,
+      section: "Finance",
+      roles: [ROLES.ADMIN, ROLES.EDITOR]
     },
-    { 
-      to: "/growth", 
-      label: "Growth", 
-      icon: TrendingUp, 
-      section: "Finance", 
-      roles: [ROLES.ADMIN, ROLES.FINANCE] 
+    {
+      to: "/growth",
+      label: "Growth",
+      icon: TrendingUp,
+      section: "Finance",
+      roles: [ROLES.ADMIN, ROLES.EDITOR]
     },
-    { 
-      to: "/suppliers", 
-      label: "Suppliers", 
-      icon: Truck, 
-      section: "Supply Chain", 
-      roles: [ROLES.ADMIN, ROLES.OPS] 
+    {
+      to: "/suppliers",
+      label: "Suppliers",
+      icon: Truck,
+      section: "Supply Chain",
+      roles: OPERATOR_ROLES
     },
-    { 
-      to: "/providers", 
-      label: "Service Providers", 
-      icon: Users, 
-      section: "Service Providers", 
-      roles: [ROLES.ADMIN, ROLES.OPS] 
+    {
+      to: "/providers",
+      label: "Service Providers",
+      icon: Users,
+      section: "Service Providers",
+      roles: OPERATOR_ROLES
     },
-    { 
-      to: "/provider-cycle", 
-      label: "Provider Cycle", 
-      icon: RefreshCw, 
-      section: "Service Providers", 
-      roles: [ROLES.ADMIN, ROLES.OPS] 
+    {
+      to: "/provider-cycle",
+      label: "Provider Cycle",
+      icon: RefreshCw,
+      section: "Service Providers",
+      roles: OPERATOR_ROLES
     },
-    { 
-      to: "/email-intake", 
-      label: "Email Intake", 
-      icon: Mail, 
-      section: "Intake", 
-      roles: [ROLES.ADMIN, ROLES.OPS, ROLES.FINANCE] 
+    {
+      to: "/email-intake",
+      label: "Email Intake",
+      icon: Mail,
+      section: "Intake",
+      roles: OPERATOR_ROLES
     },
     { 
       to: "/admin/users", 

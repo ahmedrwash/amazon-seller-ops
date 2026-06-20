@@ -14,10 +14,12 @@ export const useAuthorization = () => {
     canApproveFinance
   } = useAuth();
 
-  const isAdmin = profile?.role === 'Admin';
-  const isFinance = profile?.role === 'Finance' || isAdmin;
-  const isOps = profile?.role === 'Ops' || isAdmin;
-  const isViewer = profile?.role === 'Viewer';
+  const isAdmin = profile?.role === 'admin';
+  // No dedicated finance/ops role in the hierarchy: finance is gated by the
+  // can_manage_finance capability; "ops" maps to any operator (editor/collaborator).
+  const isFinance = isAdmin || !!canManageFinance;
+  const isOps = isAdmin || ['editor', 'collaborator'].includes(profile?.role);
+  const isViewer = profile?.role === 'viewer';
 
   return {
     user,

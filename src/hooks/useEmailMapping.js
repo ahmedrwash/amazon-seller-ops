@@ -83,7 +83,7 @@ export function useEmailMapping() {
       if (!mapping) return { success: false, error: 'Mapping not found' };
 
       // 2. Admin Check
-      if (profile?.role !== 'Admin') {
+      if (profile?.role !== 'admin') {
         return { success: false, error: 'Only Admins can apply mappings to live data.' };
       }
 
