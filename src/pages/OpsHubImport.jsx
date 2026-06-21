@@ -395,7 +395,7 @@ function CSVImportTab({ products }) {
 // ─── Apify Tab ────────────────────────────────────────────────────────────────
 const STORAGE_KEY = 'apify_product_configs';
 
-function ApifyTab({ products }) {
+function ApifyTab({ products, setProducts }) {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -425,16 +425,27 @@ function ApifyTab({ products }) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   };
 
-  // Sync configs when products list loads — auto-add missing products
+  // Sync configs when products list loads. The DB (products.asin /
+  // products.primary_keyword) is the source of truth so saved values persist
+  // across reloads and devices; transient status/result is preserved from state.
   useEffect(() => {
     if (!products.length) return;
     setConfigs(prev => {
-      const existingIds = new Set(prev.map(c => c.productId));
-      const added = products
-        .filter(p => !existingIds.has(p.id))
-        .map(p => ({ productId: p.id, asin: p.asin || '', keyword: '', status: 'idle', result: null }));
-      if (!added.length) return prev;
-      const updated = [...prev, ...added];
+      const byId = new Map(prev.map(c => [c.productId, c]));
+      const productRows = products.map(p => {
+        const ex = byId.get(p.id);
+        return {
+          productId: p.id,
+          asin: p.asin || '',
+          keyword: p.primary_keyword || '',
+          status: ex?.status || 'idle',
+          result: ex?.result || null,
+          raw: ex?.raw,
+        };
+      });
+      // Keep user-added rows not yet assigned to a real product.
+      const newRows = prev.filter(c => !products.some(p => p.id === c.productId));
+      const updated = [...productRows, ...newRows];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       return updated;
     });
@@ -442,6 +453,25 @@ function ApifyTab({ products }) {
 
   const updateConfig = (productId, field, value) => {
     saveConfigs(configs.map(c => c.productId === productId ? { ...c, [field]: value, status: 'idle', result: null } : c));
+  };
+
+  // Persist ASIN + keyword to the product row so they survive reloads/devices.
+  const persistConfig = async (cfg) => {
+    if (!cfg || !products.some(p => p.id === cfg.productId)) return; // only real products
+    const nextAsin = (cfg.asin || '').trim() || null;
+    const nextKeyword = (cfg.keyword || '').trim() || null;
+    const product = products.find(p => p.id === cfg.productId);
+    if (product && (product.asin || null) === nextAsin && (product.primary_keyword || null) === nextKeyword) return; // no change
+    try {
+      const { error } = await supabase.from('products')
+        .update({ asin: nextAsin, primary_keyword: nextKeyword })
+        .eq('id', cfg.productId);
+      if (error) throw error;
+      setProducts(prev => prev.map(p => p.id === cfg.productId ? { ...p, asin: nextAsin, primary_keyword: nextKeyword } : p));
+      toast({ title: 'Saved', description: `${product?.product_name || 'Product'} · ASIN & keyword` });
+    } catch (err) {
+      toast({ title: 'Save failed', description: err.message, variant: 'destructive' });
+    }
   };
 
   const removeConfig = (productId) => {
@@ -826,18 +856,20 @@ function ApifyTab({ products }) {
                   </SelectContent>
                 </Select>
 
-                {/* ASIN input */}
+                {/* ASIN input — persists to the product on blur */}
                 <Input
                   value={cfg.asin}
                   onChange={e => updateConfig(cfg.productId, 'asin', e.target.value)}
+                  onBlur={() => persistConfig(cfg)}
                   placeholder="B0XXXXXXXX"
                   className="font-mono text-xs h-8"
                 />
 
-                {/* Keyword input */}
+                {/* Keyword input — persists to the product on blur */}
                 <Input
                   value={cfg.keyword}
                   onChange={e => updateConfig(cfg.productId, 'keyword', e.target.value)}
+                  onBlur={() => persistConfig(cfg)}
                   placeholder="sneaker cleaning kit"
                   className="text-xs h-8"
                 />
@@ -1051,7 +1083,7 @@ export default function OpsHubImport() {
   const [products, setProducts] = useState([]);
 
   useEffect(() => {
-    supabase.from('products').select('id, product_name, sku, asin').order('created_at', { ascending: false })
+    supabase.from('products').select('id, product_name, sku, asin, primary_keyword').order('created_at', { ascending: false })
       .then(({ data }) => setProducts(data || []));
   }, []);
 
@@ -1097,7 +1129,7 @@ export default function OpsHubImport() {
         {/* Tab content */}
         <div className="bg-white rounded-2xl border border-[hsl(var(--border))] p-6">
           {tab === 'csv' && <CSVImportTab products={products} />}
-          {tab === 'apify' && <ApifyTab products={products} />}
+          {tab === 'apify' && <ApifyTab products={products} setProducts={setProducts} />}
         </div>
       </div>
     </div>
