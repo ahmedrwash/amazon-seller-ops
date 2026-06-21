@@ -111,27 +111,42 @@ export default function OpsHubProductDetail() {
   const navigate = useNavigate();
   const [product, setProduct] = useState(null);
   const [weeks, setWeeks] = useState([]);
+  const [daily, setDaily] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
-        const [{ data: prod }, { data: rows }] = await Promise.all([
+        const [{ data: prod }, { data: rows }, { data: days }] = await Promise.all([
           supabase.from('products').select('id, product_name, sku, asin, main_category').eq('id', id).maybeSingle(),
           supabase.from('product_weekly_data')
             .select('year, week_number, period_start, period_end, gmv_this_week, units_sold_this_week, sessions, page_views, buy_box_percentage, ppc_spend_this_week, ppc_revenue_this_week, clicks, orders_from_ppc, bsr, total_reviews, average_star_rating, primary_keyword_rank, inventory_at_fba, selling_price, updated_at')
             .eq('product_id', id)
             .order('year', { ascending: true })
             .order('week_number', { ascending: true }),
+          supabase.from('product_daily_data')
+            .select('date, ordered_product_sales, units_ordered, sessions, page_views, buy_box_percentage, unit_session_percentage, units_refunded, refund_rate')
+            .eq('product_id', id)
+            .order('date', { ascending: true })
+            .limit(120),
         ]);
         setProduct(prod);
         setWeeks(rows || []);
+        setDaily(days || []);
       } finally {
         setLoading(false);
       }
     })();
   }, [id]);
+
+  // Daily chart series (most recent first in table, chronological in chart)
+  const dailySeries = useMemo(() => daily.map(d => ({
+    date: d.date ? d.date.slice(5).replace('-', '/') : '',
+    revenue: d.ordered_product_sales ?? 0,
+    units: d.units_ordered ?? 0,
+    sessions: d.sessions ?? 0,
+  })), [daily]);
 
   // Build chart series with derived metrics
   const series = useMemo(() => weeks.map(w => {
@@ -366,6 +381,60 @@ export default function OpsHubProductDetail() {
               </div>
             </div>
           </>
+        )}
+
+        {/* Daily Breakdown — day-by-day detail from the daily Business Report */}
+        {daily.length > 0 && (
+          <div className="space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="font-heading text-xl text-[hsl(var(--cinder))]">Daily Breakdown</h2>
+              <span className="text-xs text-slate-400">{daily.length} days</span>
+            </div>
+
+            <ChartCard title="Daily Revenue & Sessions" subtitle="Day-by-day sales and traffic">
+              <LineChart data={dailySeries} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.grid} vertical={false} />
+                <XAxis dataKey="date" stroke={C.slate} fontSize={11} minTickGap={20} />
+                <YAxis yAxisId="l" stroke={C.slate} fontSize={12} tickFormatter={v => `$${v}`} />
+                <YAxis yAxisId="r" orientation="right" stroke={C.slate} fontSize={12} />
+                <Tooltip contentStyle={tooltipStyle} formatter={(v, n) => n === 'Revenue' ? fmt(v, 'currency2') : v} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Line yAxisId="l" type="monotone" dataKey="revenue" name="Revenue" stroke={C.terracotta} strokeWidth={2} dot={false} />
+                <Line yAxisId="r" type="monotone" dataKey="sessions" name="Sessions" stroke={C.blue} strokeWidth={2} dot={false} />
+              </LineChart>
+            </ChartCard>
+
+            <div className="bg-white border border-[hsl(var(--border))] rounded-2xl overflow-hidden">
+              <div className="px-5 py-3 border-b border-[hsl(var(--border))]">
+                <h3 className="font-heading text-lg text-[hsl(var(--cinder))]">Daily Detail</h3>
+              </div>
+              <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide sticky top-0">
+                    <tr>
+                      {['Date', 'Revenue', 'Units', 'Sessions', 'Page Views', 'CVR', 'Buy Box', 'Refunds'].map(h => (
+                        <th key={h} className="px-3 py-2 text-right first:text-left whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...daily].reverse().map(d => (
+                      <tr key={d.date} className="border-t border-[hsl(var(--border))] hover:bg-slate-50/60 font-mono">
+                        <td className="px-3 py-2 font-sans font-medium text-[hsl(var(--cinder))] whitespace-nowrap">{d.date}</td>
+                        <td className="px-3 py-2 text-right">{fmt(d.ordered_product_sales, 'currency2')}</td>
+                        <td className="px-3 py-2 text-right">{fmt(d.units_ordered, 'int')}</td>
+                        <td className="px-3 py-2 text-right">{fmt(d.sessions, 'int')}</td>
+                        <td className="px-3 py-2 text-right">{fmt(d.page_views, 'int')}</td>
+                        <td className="px-3 py-2 text-right">{d.unit_session_percentage != null ? fmt(d.unit_session_percentage, 'percent') : '—'}</td>
+                        <td className="px-3 py-2 text-right">{d.buy_box_percentage != null ? fmt(d.buy_box_percentage, 'percent') : '—'}</td>
+                        <td className="px-3 py-2 text-right">{fmt(d.units_refunded, 'int')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>
