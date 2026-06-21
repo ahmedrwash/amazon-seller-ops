@@ -260,7 +260,108 @@ function CSVImportTab({ products }) {
     }
   };
 
-  const subtypeLabel = subtype === 'asin' ? 'By ASIN (period totals)' : subtype === 'daily' ? 'Daily (will be summed)' : '';
+  // ── Daily Business Report → per-day rows + weekly rollup ─────────────────────
+  const parseRowDate = (s) => {
+    if (!s) return null;
+    const d = new Date(s);
+    if (isNaN(d)) return null;
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+  const isoDate = (d) => {
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${m}-${day}`;
+  };
+
+  const isDaily = reportType === 'business' && subtype === 'daily';
+
+  // Parsed day rows (used for preview count + import)
+  const dailyParsed = isDaily ? rows.map(r => {
+    const d = parseRowDate(r['Date'] || r['date']);
+    if (!d) return null;
+    return {
+      dateObj: d,
+      row: {
+        date: isoDate(d),
+        ordered_product_sales: parseMoney(findCol(r, ['Ordered Product Sales'])),
+        units_ordered: parseInt2(findCol(r, ['Units Ordered'])),
+        total_order_items: parseInt2(findCol(r, ['Total Order Items'])),
+        sessions: parseInt2(findCol(r, ['Sessions - Total', 'Sessions'])),
+        page_views: parseInt2(findCol(r, ['Page Views - Total', 'Page Views'])),
+        buy_box_percentage: parseFloat2(findCol(r, ['Featured Offer (Buy Box) Percentage'])),
+        unit_session_percentage: parseFloat2(findCol(r, ['Unit Session Percentage'])),
+        units_refunded: parseInt2(findCol(r, ['Units Refunded'])),
+        refund_rate: parseFloat2(findCol(r, ['Refund Rate'])),
+      },
+    };
+  }).filter(Boolean) : [];
+
+  const dailyRange = dailyParsed.length
+    ? `${dailyParsed[0].row.date} → ${dailyParsed[dailyParsed.length - 1].row.date}`
+    : '';
+
+  const handleImportDaily = async () => {
+    if (!selectedProductId) { toast({ title: 'Select a product first', variant: 'destructive' }); return; }
+    if (!dailyParsed.length) { toast({ title: 'No dated rows found in the file', variant: 'destructive' }); return; }
+    setImporting(true);
+    setResult(null);
+    try {
+      const now = new Date().toISOString();
+      // 1) Per-day rows
+      const dailyPayloads = dailyParsed.map(({ row }) => ({
+        product_id: selectedProductId,
+        user_id: user?.id,
+        updated_at: now,
+        ...row,
+      }));
+      const { error: dErr } = await supabase.from('product_daily_data')
+        .upsert(dailyPayloads, { onConflict: 'product_id,date' });
+      if (dErr) throw dErr;
+
+      // 2) Roll up into weekly aggregates (Amazon Sun–Sat weeks)
+      const weeks = {};
+      dailyParsed.forEach(({ dateObj, row }) => {
+        const wk = amazonWeek(dateObj);
+        const w = weeks[wk.value] || (weeks[wk.value] = { wk, sales: 0, units: 0, sessions: 0, pageviews: 0, bbSum: 0, bbCount: 0 });
+        w.sales += row.ordered_product_sales || 0;
+        w.units += row.units_ordered || 0;
+        w.sessions += row.sessions || 0;
+        w.pageviews += row.page_views || 0;
+        if (row.buy_box_percentage != null) { w.bbSum += row.buy_box_percentage; w.bbCount++; }
+      });
+      const weeklyPayloads = Object.values(weeks).map(w => ({
+        product_id: selectedProductId,
+        user_id: user?.id,
+        year: w.wk.year,
+        week_number: w.wk.week,
+        period_start: w.wk.period_start,
+        period_end: w.wk.period_end,
+        gmv_this_week: +w.sales.toFixed(2),
+        units_sold_this_week: w.units,
+        sessions: w.sessions,
+        page_views: w.pageviews,
+        buy_box_percentage: w.bbCount ? +(w.bbSum / w.bbCount).toFixed(2) : null,
+        updated_at: now,
+      }));
+      if (weeklyPayloads.length) {
+        const { error: wErr } = await supabase.from('product_weekly_data')
+          .upsert(weeklyPayloads, { onConflict: 'product_id,year,week_number' });
+        if (wErr) throw wErr;
+      }
+
+      setResult({ ok: true, mode: 'daily', daily: dailyPayloads.length, weeks: weeklyPayloads.length });
+      toast({ title: `Imported ${dailyPayloads.length} days · ${weeklyPayloads.length} week(s) rolled up` });
+      setTimeout(() => navigate(`/ops-hub/product/${selectedProductId}`), 900);
+    } catch (err) {
+      setResult({ ok: false, error: err.message });
+      toast({ title: 'Import failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const subtypeLabel = subtype === 'asin' ? 'By ASIN (period totals)' : subtype === 'daily' ? `Daily — ${dailyParsed.length} days saved individually` : '';
 
   return (
     <div className="space-y-6">
@@ -288,13 +389,24 @@ function CSVImportTab({ products }) {
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label>Target Week <span className="text-slate-400 font-normal text-xs">(auto-detected from daily reports)</span></Label>
-          <Select value={selectedWeek} onValueChange={setSelectedWeek}>
-            <SelectTrigger><SelectValue placeholder="Select week" /></SelectTrigger>
-            <SelectContent>
-              {weekOptions.map(w => <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          {isDaily ? (
+            <>
+              <Label>Date Range <span className="text-slate-400 font-normal text-xs">(each day saved individually)</span></Label>
+              <div className="h-9 flex items-center px-3 rounded-md border border-[hsl(var(--border))] bg-slate-50 text-sm text-slate-600 font-mono">
+                {dailyRange || 'No dated rows found'}
+              </div>
+            </>
+          ) : (
+            <>
+              <Label>Target Week <span className="text-slate-400 font-normal text-xs">(auto-detected from daily reports)</span></Label>
+              <Select value={selectedWeek} onValueChange={setSelectedWeek}>
+                <SelectTrigger><SelectValue placeholder="Select week" /></SelectTrigger>
+                <SelectContent>
+                  {weekOptions.map(w => <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </>
+          )}
         </div>
       </div>
 
@@ -372,7 +484,9 @@ function CSVImportTab({ products }) {
             : <XCircle className="w-5 h-5 text-red-500 mt-0.5" />}
           <div className="text-sm">
             {result.ok
-              ? <><p className="font-semibold text-green-700">Import successful — redirecting to Week {result.week}…</p><p className="text-green-600">{result.rows} rows processed · {result.fields} fields saved</p></>
+              ? (result.mode === 'daily'
+                  ? <><p className="font-semibold text-green-700">Imported {result.daily} days — opening daily breakdown…</p><p className="text-green-600">{result.weeks} week(s) rolled up into the weekly report</p></>
+                  : <><p className="font-semibold text-green-700">Import successful — redirecting to Week {result.week}…</p><p className="text-green-600">{result.rows} rows processed · {result.fields} fields saved</p></>)
               : <><p className="font-semibold text-red-700">Import failed</p><p className="text-red-600 font-mono text-xs">{result.error}</p></>}
           </div>
         </div>
@@ -380,12 +494,14 @@ function CSVImportTab({ products }) {
 
       <div className="flex justify-end">
         <Button
-          onClick={handleImport}
-          disabled={importing || !rows.length || !selectedProductId || !selectedWeek || !mapped || !Object.keys(mapped).length}
+          onClick={isDaily ? handleImportDaily : handleImport}
+          disabled={isDaily
+            ? (importing || !selectedProductId || !dailyParsed.length)
+            : (importing || !rows.length || !selectedProductId || !selectedWeek || !mapped || !Object.keys(mapped).length)}
           className="bg-[hsl(var(--terracotta))] hover:opacity-90 text-white px-8"
         >
           {importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-          Save to Dashboard
+          {isDaily ? `Import ${dailyParsed.length} Days` : 'Save to Dashboard'}
         </Button>
       </div>
     </div>
