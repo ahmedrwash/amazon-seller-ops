@@ -518,14 +518,27 @@ function ApifyTab({ products, setProducts }) {
       return null;
     };
 
-    // BSR: field is `bestsellerRanks` (array of objects with `rank` and `category`)
-    const bsrRaw = item.bestsellerRanks ?? item.bestsellersRank ?? item.bestSellerRanks ?? item.salesRanks;
+    // BSR: usually `bestsellerRanks` (array of {rank, category}), but the actor
+    // returns several shapes — handle array, object, and plain number.
+    const bsrRaw = item.bestsellerRanks ?? item.bestsellersRank ?? item.bestSellerRanks
+      ?? item.salesRanks ?? item.salesRank ?? item.bsr ?? item.rank;
     let bsr = null;
     if (Array.isArray(bsrRaw) && bsrRaw.length) {
-      bsr = toInt(bsrRaw[0]?.rank ?? bsrRaw[0]?.position ?? bsrRaw[0]?.value);
+      bsr = toInt(bsrRaw[0]?.rank ?? bsrRaw[0]?.position ?? bsrRaw[0]?.value ?? bsrRaw[0]);
     } else if (bsrRaw && typeof bsrRaw === 'object') {
-      bsr = toInt(bsrRaw.rank ?? bsrRaw.position);
+      bsr = toInt(bsrRaw.rank ?? bsrRaw.position ?? bsrRaw.value);
+    } else if (bsrRaw != null) {
+      bsr = toInt(bsrRaw);
     }
+
+    // Price can be a number, a "$12.99" string, or an object {value|amount}.
+    const priceFrom = (c) => {
+      if (c == null) return null;
+      if (typeof c === 'object') return toNum(c.value ?? c.amount ?? c.price ?? c.current);
+      return toNum(c);
+    };
+    const sellingPrice = priceFrom(item.price) ?? priceFrom(item.listPrice)
+      ?? priceFrom(item.priceAmount) ?? priceFrom(item.salePrice) ?? priceFrom(item.buyBoxPrice);
 
     // Category from breadCrumbs string: "A > B > C > D" → last segment
     const breadCrumbStr = typeof item.breadCrumbs === 'string' ? item.breadCrumbs : null;
@@ -541,9 +554,9 @@ function ApifyTab({ products, setProducts }) {
     return {
       // ── Schema fields saved to product_weekly_data ──
       bsr,
-      total_reviews:       toInt(item.reviewsCount),
-      average_star_rating: toStars(item.stars),
-      selling_price:       toNum(item.price ?? item.listPrice),
+      total_reviews:       toInt(item.reviewsCount ?? item.reviews ?? item.ratingsTotal ?? item.reviewCount ?? item.countReviews),
+      average_star_rating: toStars(item.stars ?? item.rating ?? item.averageRating ?? item.starsAverage),
+      selling_price:       sellingPrice,
       // ── Display-only fields (prefixed _) ──
       _title:           item.title ?? null,
       _brand:           item.brand ?? null,
@@ -711,9 +724,19 @@ function ApifyTab({ products, setProducts }) {
     if (!toSave.length) { toast({ title: 'No fetched data to save', variant: 'destructive' }); return; }
 
     try {
+      // Schema fields only (no _ prefixed display fields)
+      const schemaFields = ['bsr', 'total_reviews', 'average_star_rating', 'selling_price', 'primary_keyword_rank'];
+      // Pull any existing values for this week so a missing scrape keeps the last
+      // good value (and we only fall back to 0 when the field was never recorded).
+      const ids = toSave.map(c => c.productId);
+      const { data: existingRows } = await supabase.from('product_weekly_data')
+        .select('product_id, bsr, total_reviews, average_star_rating, selling_price, primary_keyword_rank')
+        .in('product_id', ids).eq('year', yr).eq('week_number', wk);
+      const existing = {};
+      (existingRows || []).forEach(r => { existing[r.product_id] = r; });
+
       const payloads = toSave.map(c => {
-        // Schema fields only (no _ prefixed display fields)
-        const schemaFields = ['bsr', 'total_reviews', 'average_star_rating', 'selling_price', 'primary_keyword_rank'];
+        const ex = existing[c.productId] || {};
         const payload = {
           product_id: c.productId,
           user_id: user?.id,
@@ -726,7 +749,10 @@ function ApifyTab({ products, setProducts }) {
           apify_raw: c.raw ? { ...c.raw, _extra: undefined } : null,
         };
         schemaFields.forEach(k => {
-          if (c.result[k] !== null && c.result[k] !== undefined) payload[k] = c.result[k];
+          const fetched = c.result[k];
+          payload[k] = (fetched !== null && fetched !== undefined)
+            ? fetched                                                   // fresh value from Amazon
+            : (ex[k] !== null && ex[k] !== undefined ? ex[k] : 0);      // else keep last, else 0
         });
         return payload;
       });
