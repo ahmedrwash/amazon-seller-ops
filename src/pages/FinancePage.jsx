@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useToast } from '@/components/ui/use-toast';
 import { useCompanyFinance } from '@/hooks/useCompanyFinance';
 
-const CATEGORIES = ['Sales', 'Services', 'Payroll', 'Contractors', 'Software', 'Marketing', 'Office', 'Professional Fees', 'Tax', 'Bank Fees', 'Other'];
+const CATEGORIES = ['Revenue', 'Legal & professional fees', 'Trademark / IP registration expense', 'Other operating expenses', 'Inventory', 'Payroll', 'Contractors', 'Software', 'Marketing', 'Tax', 'Bank fees'];
 const today = new Date().toISOString().slice(0, 10);
 const currentMonth = today.slice(0, 7);
 
@@ -30,9 +30,9 @@ export default function FinancePage() {
   const [transactionOpen, setTransactionOpen] = useState(false);
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [transaction, setTransaction] = useState({ occurred_on: today, direction: 'expense', category: 'Software', description: '', counterparty: '', amount: '', status: 'paid' });
+  const [transaction, setTransaction] = useState({ occurred_on: today, direction: 'expense', category: 'Other operating expenses', account_code: '6900', description: '', counterparty: '', vendor_payee: '', amount: '', status: 'paid', payment_method: '', evidence_reference: '', duplicate_check: 'not_checked' });
   const [budget, setBudget] = useState({ category: 'Software', amount: '' });
-  const { transactions, budgets, metrics, loading, error, createTransaction, deleteTransaction, upsertBudget } = useCompanyFinance(month, currency);
+  const { transactions, budgets, accounts, metrics, loading, error, createTransaction, deleteTransaction, upsertBudget } = useCompanyFinance(month, currency);
   const { toast } = useToast();
 
   const categorySpend = useMemo(() => transactions.filter((item) => item.direction === 'expense' && item.status !== 'cancelled')
@@ -45,7 +45,7 @@ export default function FinancePage() {
     setSaving(false);
     if (result.error) return toast({ title: 'Could not save transaction', description: result.error.message, variant: 'destructive' });
     setTransactionOpen(false);
-    setTransaction({ occurred_on: today, direction: 'expense', category: 'Software', description: '', counterparty: '', amount: '', status: 'paid' });
+    setTransaction({ occurred_on: today, direction: 'expense', category: 'Other operating expenses', account_code: '6900', description: '', counterparty: '', vendor_payee: '', amount: '', status: 'paid', payment_method: '', evidence_reference: '', duplicate_check: 'not_checked' });
     toast({ title: 'Transaction saved' });
   };
 
@@ -124,6 +124,30 @@ export default function FinancePage() {
               </div>
             </section>
           </div>
+          <div className="grid gap-6 xl:grid-cols-2">
+            <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+              <h2 className="font-semibold text-white">Provisional P&amp;L — {currency}</h2>
+              <p className="mt-1 text-xs text-amber-300">Currencies remain separate. No functional-currency total is calculated until transaction-date FX rates are available.</p>
+              <div className="mt-4 divide-y divide-slate-800 text-sm">
+                <div className="flex justify-between py-3 text-slate-300"><span>Revenue</span><span>{money(metrics.income, currency)}</span></div>
+                <div className="flex justify-between py-3 text-slate-300"><span>Total operating expenses</span><span>{money(metrics.expenses, currency)}</span></div>
+                <div className="flex justify-between py-3 font-semibold text-white"><span>Net profit / (loss)</span><span className={metrics.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{money(metrics.netProfit, currency)}</span></div>
+              </div>
+            </section>
+            <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+              <h2 className="font-semibold text-white">Controls &amp; source gaps</h2>
+              <div className="mt-4 space-y-3 text-sm">
+                <div className="rounded-lg bg-amber-950/30 p-3 text-amber-200"><strong>FX rates:</strong> EUR functional-currency conversion is pending.</div>
+                <div className="rounded-lg bg-amber-950/30 p-3 text-amber-200"><strong>Bank / Wise:</strong> closing cash requires complete statements.</div>
+                <div className="rounded-lg bg-amber-950/30 p-3 text-amber-200"><strong>Amazon reports:</strong> settlement revenue, refunds, fees, COGS, and receivables remain outside this company module.</div>
+                <div className="rounded-lg bg-slate-950 p-3 text-slate-300"><strong>Duplicate control:</strong> every ledger entry stores an evidence reference and duplicate-check status.</div>
+              </div>
+            </section>
+          </div>
+          <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+            <h2 className="font-semibold text-white">Chart of accounts</h2>
+            <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">{accounts.map((account) => <div key={account.account_code} className="rounded-lg border border-slate-800 bg-slate-950 p-3"><div className="flex justify-between"><span className="font-mono text-xs text-[hsl(var(--terracotta))]">{account.account_code}</span><span className="text-xs capitalize text-slate-500">{account.account_type}</span></div><p className="mt-1 text-sm font-medium text-white">{account.account_name}</p><p className="mt-1 text-xs text-slate-500">{account.usage_note}</p></div>)}</div>
+          </section>
         </TabsContent>
         <TabsContent value="amazon" className="mt-6 rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-12 text-center"><h2 className="text-xl font-semibold text-white">Amazon Product Finance</h2><p className="mt-2 text-slate-400">Reserved for revenue, fees, COGS, and profitability per product.</p></TabsContent>
       </Tabs>
@@ -131,14 +155,18 @@ export default function FinancePage() {
       <Dialog open={transactionOpen} onOpenChange={setTransactionOpen}><DialogContent className="border-slate-800 bg-slate-900 text-white"><DialogHeader><DialogTitle>Add company transaction</DialogTitle></DialogHeader><div className="grid gap-4 sm:grid-cols-2">
         <div><Label>Date</Label><Input type="date" value={transaction.occurred_on} onChange={(e) => setTransaction({ ...transaction, occurred_on: e.target.value })} /></div>
         <div><Label>Type</Label><select value={transaction.direction} onChange={(e) => setTransaction({ ...transaction, direction: e.target.value })} className="mt-2 h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3"><option value="income">Income</option><option value="expense">Expense</option></select></div>
-        <div><Label>Category</Label><select value={transaction.category} onChange={(e) => setTransaction({ ...transaction, category: e.target.value })} className="mt-2 h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3">{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select></div>
+        <div><Label>Account</Label><select value={transaction.account_code} onChange={(e) => { const selected = accounts.find((item) => item.account_code === e.target.value); setTransaction({ ...transaction, account_code: e.target.value, category: selected?.account_name || transaction.category }); }} className="mt-2 h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3">{accounts.map((item) => <option key={item.account_code} value={item.account_code}>{item.account_code} — {item.account_name}</option>)}</select></div>
         <div><Label>Amount ({currency})</Label><Input type="number" min="0.01" step="0.01" value={transaction.amount} onChange={(e) => setTransaction({ ...transaction, amount: e.target.value })} /></div>
         <div className="sm:col-span-2"><Label>Description</Label><Input value={transaction.description} onChange={(e) => setTransaction({ ...transaction, description: e.target.value })} placeholder="What was this transaction for?" /></div>
-        <div><Label>Counterparty</Label><Input value={transaction.counterparty} onChange={(e) => setTransaction({ ...transaction, counterparty: e.target.value })} /></div>
+        <div><Label>Vendor / Payee</Label><Input value={transaction.vendor_payee} onChange={(e) => setTransaction({ ...transaction, vendor_payee: e.target.value, counterparty: e.target.value })} /></div>
         <div><Label>Status</Label><select value={transaction.status} onChange={(e) => setTransaction({ ...transaction, status: e.target.value })} className="mt-2 h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3"><option value="paid">Paid</option><option value="pending">Pending</option><option value="cancelled">Cancelled</option></select></div>
+        <div><Label>Payment method</Label><Input value={transaction.payment_method} onChange={(e) => setTransaction({ ...transaction, payment_method: e.target.value })} placeholder="EFT, card, Wise…" /></div>
+        <div><Label>Evidence / Reference</Label><Input value={transaction.evidence_reference} onChange={(e) => setTransaction({ ...transaction, evidence_reference: e.target.value })} placeholder="Invoice, receipt, bank reference" /></div>
+        <div className="sm:col-span-2"><Label>Duplicate assessment</Label><select value={transaction.duplicate_check} onChange={(e) => setTransaction({ ...transaction, duplicate_check: e.target.value })} className="mt-2 h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3"><option value="not_checked">Not checked</option><option value="clear">No duplicate found</option><option value="possible_duplicate">Possible duplicate</option></select></div>
       </div><Button disabled={saving} onClick={saveTransaction}>{saving ? 'Saving…' : 'Save transaction'}</Button></DialogContent></Dialog>
 
       <Dialog open={budgetOpen} onOpenChange={setBudgetOpen}><DialogContent className="border-slate-800 bg-slate-900 text-white"><DialogHeader><DialogTitle>Set monthly expense budget</DialogTitle></DialogHeader><div className="space-y-4"><div><Label>Category</Label><select value={budget.category} onChange={(e) => setBudget({ ...budget, category: e.target.value })} className="mt-2 h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3">{CATEGORIES.filter((item) => item !== 'Sales' && item !== 'Services').map((item) => <option key={item}>{item}</option>)}</select></div><div><Label>Budget ({currency})</Label><Input type="number" min="0" step="0.01" value={budget.amount} onChange={(e) => setBudget({ ...budget, amount: e.target.value })} /></div></div><Button disabled={saving} onClick={saveBudget}>{saving ? 'Saving…' : 'Save budget'}</Button></DialogContent></Dialog>
     </div>
   );
 }
+
