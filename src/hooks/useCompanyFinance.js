@@ -11,6 +11,7 @@ const monthBounds = (month) => {
 export function useCompanyFinance(month, currency) {
   const [transactions, setTransactions] = useState([]);
   const [budgets, setBudgets] = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -18,17 +19,19 @@ export function useCompanyFinance(month, currency) {
     setLoading(true);
     setError(null);
     const { start, end } = monthBounds(month);
-    const [transactionsResult, budgetsResult] = await Promise.all([
+    const [transactionsResult, budgetsResult, accountsResult] = await Promise.all([
       supabase.from('company_finance_transactions').select('*')
         .gte('occurred_on', start).lt('occurred_on', end)
         .eq('currency', currency).order('occurred_on', { ascending: false }),
       supabase.from('company_finance_budgets').select('*')
-        .eq('month', start).eq('currency', currency).order('category')
+        .eq('month', start).eq('currency', currency).order('category'),
+      supabase.from('company_finance_accounts').select('*').eq('active', true).order('account_code')
     ]);
-    const nextError = transactionsResult.error || budgetsResult.error;
+    const nextError = transactionsResult.error || budgetsResult.error || accountsResult.error;
     if (nextError) setError(nextError);
     setTransactions(transactionsResult.data || []);
     setBudgets(budgetsResult.data || []);
+    setAccounts(accountsResult.data || []);
     setLoading(false);
   }, [month, currency]);
 
@@ -67,5 +70,6 @@ export function useCompanyFinance(month, currency) {
     return { income, expenses, netProfit: income - expenses, budget, budgetRemaining: budget - expenses };
   }, [transactions, budgets]);
 
-  return { transactions, budgets, metrics, loading, error, refresh, createTransaction, deleteTransaction, upsertBudget };
+  return { transactions, budgets, accounts, metrics, loading, error, refresh, createTransaction, deleteTransaction, upsertBudget };
 }
+
