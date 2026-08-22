@@ -20,6 +20,7 @@ import OpsHubImport from '@/pages/OpsHubImport';
 import OpsHubProductDetail from '@/pages/OpsHubProductDetail';
 import OpsHubScorecard from '@/pages/OpsHubScorecard';
 import ProductMasterDataPage from '@/pages/ProductMasterDataPage';
+import DataSourcesHub from '@/pages/DataSourcesHub';
 import UserManagement from '@/pages/UserManagement';
 
 import {
@@ -100,6 +101,13 @@ export default function App() {
                     <ProtectedRoute>
                       <MainLayout>
                         <RequireModule module="ops_hub"><OpsHubImport /></RequireModule>
+                      </MainLayout>
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/ops-hub/data-sources" element={
+                    <ProtectedRoute>
+                      <MainLayout>
+                        <RequireModule module="ops_hub"><DataSourcesHub /></RequireModule>
                       </MainLayout>
                     </ProtectedRoute>
                   } />
@@ -215,9 +223,7 @@ export default function App() {
                       </MainLayout>
                     </ProtectedRoute>
                   } />
-                  <Route path="/admin/users" element={
-                    <Navigate to="/user-management" replace />
-                  } />
+                  <Route path="/admin/users" element={<Navigate to="/user-management" replace />} />
                   <Route path="/settings/marketplaces" element={<AdminRoute><MainLayout><SettingsMarketplacesPage /></MainLayout></AdminRoute>} />
                   <Route path="/admin/test-data" element={<AdminRoute><MainLayout><AdminTestData /></MainLayout></AdminRoute>} />
                   
