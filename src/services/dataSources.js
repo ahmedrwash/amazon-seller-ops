@@ -22,7 +22,7 @@ export async function loadDataSourcesHub(userId) {
   const [sourcesRes, productsRes, importsRes, keywordsRes, competitorsRes] = await Promise.all([
     supabase.from('v_data_sources_status').select('*').order('source_name'),
     supabase.from('product_marketplaces').select('id,asin,sku,currency,products(product_name,brand),marketplaces(code,name)').order('created_at', { ascending: false }),
-    supabase.from('source_import_jobs').select('id,import_type,original_file_name,status,total_rows,valid_rows,invalid_rows,created_at,data_sources(source_name,source_code)').order('created_at', { ascending: false }).limit(25),
+    supabase.from('source_import_jobs').select('id,import_type,original_file_name,status,total_rows,valid_rows,invalid_rows,warning_count,error_message,created_at,data_sources(source_name,source_code)').order('created_at', { ascending: false }).limit(25),
     supabase.from('helium10_keyword_intelligence').select('id,keyword,search_volume,organic_rank,sponsored_rank,competing_products,title_density,iq_score,snapshot_date').order('snapshot_date', { ascending: false }).order('search_volume', { ascending: false }).limit(25),
     supabase.from('competitor_market_snapshots').select('id,competitor_asin,competitor_title,brand,price,bsr,rating,review_count,estimated_monthly_sales,estimated_monthly_revenue,snapshot_date').order('snapshot_date', { ascending: false }).limit(25),
   ]);
@@ -55,7 +55,7 @@ export async function createSourceImportJob({ userId, sourceId, productMarketpla
     .upload(storagePath, file, { upsert: false, contentType: file.type || 'text/csv' });
   if (uploadError) throw uploadError;
 
-  const { data, error } = await supabase.from('source_import_jobs').insert({
+  const { data: job, error } = await supabase.from('source_import_jobs').insert({
     owner_id: userId,
     data_source_id: sourceId,
     product_marketplace_id: productMarketplaceId,
@@ -69,5 +69,15 @@ export async function createSourceImportJob({ userId, sourceId, productMarketpla
     await supabase.storage.from('source-imports').remove([storagePath]);
     throw error;
   }
-  return data;
+
+  if (importType.startsWith('helium10_')) {
+    const { data: parsed, error: parseError } = await supabase.functions.invoke('parse-source-import', {
+      body: { job_id: job.id },
+    });
+    if (parseError) throw parseError;
+    if (parsed?.error) throw new Error(parsed.error);
+    return { job, parsed };
+  }
+
+  return { job, parsed: null };
 }
