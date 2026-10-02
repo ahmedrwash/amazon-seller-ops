@@ -7,8 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
-  AlertCircle, ArrowLeft, CheckCircle2, Clock3, FileSpreadsheet,
-  Loader2, RefreshCw, ShieldCheck, Upload, XCircle
+  AlertCircle, ArrowLeft, BookOpen, CheckCircle2, Clock3, ExternalLink, FileSpreadsheet,
+  Loader2, MapPin, RefreshCw, ShieldCheck, Upload, XCircle
 } from 'lucide-react';
 import {
   applyAmazonReport,
@@ -24,6 +24,48 @@ const statusTone = (status) => {
   if (['review', 'ready_for_review', 'pending'].includes(status)) return 'bg-amber-50 text-amber-700 border-amber-200';
   return 'bg-slate-50 text-slate-600 border-slate-200';
 };
+
+const REPORT_GUIDE = {
+  sales_traffic: { step:'01', workspace:'All reports', section:'My business', view:'Business reports', report:'Detail Page Sales and Traffic by Child Item', cadence:'Daily', instruction:'All reports → My business → Business reports. Select the child-item Sales & Traffic view, set the required date range, then export CSV.' },
+  fba_inventory: { step:'02', workspace:'All reports', section:'Supply chain', view:'FBA inventory reports', report:'FBA Inventory', cadence:'Daily', instruction:'All reports → Supply chain → FBA inventory reports. Download the current FBA inventory report showing sellable/available inventory for the SKU.' },
+  ads_campaign: { step:'03', workspace:'Marketing', section:'Ads console', view:'Measurement & Reporting → Reporting', report:'Sponsored Products — Campaign', cadence:'Daily', instruction:'Marketing → Ads console → Measurement & Reporting → Reporting. Choose Sponsored Products and export the Campaign report.' },
+  ads_search_term: { step:'04', workspace:'Marketing', section:'Ads console', view:'Measurement & Reporting → Reporting', report:'Sponsored Products — Search term', cadence:'Weekly', instruction:'Marketing → Ads console → Measurement & Reporting → Reporting. Choose Sponsored Products and export the Search term report.' },
+  payments_transactions: { step:'05', workspace:'All reports', section:'Finance', view:'Payment reports repository', report:'Transaction report', cadence:'Weekly', instruction:'All reports → Finance → Payment reports repository. Request/download the Transaction report for the required date range.' },
+  settlement: { step:'06', workspace:'All reports', section:'Finance', view:'Payment reports repository', report:'Settlement report', cadence:'Per settlement', instruction:'All reports → Finance → Payment reports repository. Download the completed settlement file.' },
+  returns: { step:'07', workspace:'All reports', section:'Orders', view:'FBA customer returns reports', report:'FBA Customer Returns', cadence:'Weekly', instruction:'All reports → Orders → FBA customer returns reports. Download the FBA Customer Returns report.' },
+  search_query_performance: { step:'08', workspace:'Brands', section:'Brand Analytics', view:'Search Analytics', report:'Search Query Performance', cadence:'Weekly', instruction:'Brands → Brand Analytics → Search Analytics → Search Query Performance. Select the ASIN and period, then export.' },
+};
+
+function ExtractionGuide({ matrix, selectedType, onSelect }) {
+  return (
+    <section className="rounded-2xl border border-[hsl(var(--border))] bg-white shadow-sm overflow-hidden">
+      <div className="p-5 border-b border-[hsl(var(--border))] flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-[hsl(var(--terracotta))]/10 flex items-center justify-center flex-shrink-0"><BookOpen className="w-5 h-5 text-[hsl(var(--terracotta))]" /></div>
+          <div><h2 className="font-heading text-xl text-[hsl(var(--cinder))]">Amazon New Seller Central · Extraction Guide</h2><p className="text-xs text-slate-400 mt-1">Employee SOP — exact workspace, view, report and upload status</p></div>
+        </div>
+        <a href="https://sellercentral.amazon.com/" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-medium hover:bg-slate-50">Open Seller Central <ExternalLink className="w-4 h-4 ml-2" /></a>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-slate-500"><tr><th className="text-left p-3">#</th><th className="text-left p-3">Amazon path</th><th className="text-left p-3">Report / View</th><th className="text-left p-3">Cadence</th><th className="text-left p-3">1NLT status</th><th className="text-right p-3">Action</th></tr></thead>
+          <tbody>{Object.entries(REPORT_GUIDE).map(([code,g]) => {
+            const m=matrix.find(x=>x.report_type_code===code); const status=m?.readiness_status||'missing';
+            return <tr key={code} className={`border-t border-slate-100 ${selectedType===code?'bg-orange-50/50':''}`}>
+              <td className="p-3 font-semibold text-slate-400">{g.step}</td>
+              <td className="p-3 min-w-[280px]"><div className="font-medium flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-[hsl(var(--terracotta))]" />{g.workspace} → {g.section}</div><div className="text-xs text-slate-400 mt-1">{g.view}</div></td>
+              <td className="p-3 min-w-[260px]"><div className="font-medium">{g.report}</div><div className="text-xs text-slate-400 mt-1">{g.instruction}</div></td>
+              <td className="p-3 text-slate-500 whitespace-nowrap">{g.cadence}</td>
+              <td className="p-3"><Badge tone={status}>{status}</Badge>{m?.stale && <div className="text-[11px] text-amber-600 mt-1">Refresh required</div>}</td>
+              <td className="p-3 text-right"><Button size="sm" variant={selectedType===code?'default':'outline'} onClick={()=>onSelect(code)}>Select</Button></td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+      <div className="px-5 py-3 bg-slate-50 border-t text-xs text-slate-500">Employee flow: open Amazon path → export original report → do not rename columns → select report → upload → review validation → apply to analytics.</div>
+    </section>
+  );
+}
 
 function Badge({ children, tone }) {
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(tone)}`}>{children}</span>;
@@ -99,6 +141,8 @@ export default function OpsHubImport() {
     [data.productMarketplaces, form.productMarketplaceId]
   );
 
+  const selectedGuide = REPORT_GUIDE[form.reportTypeCode] || null;
+
   const upload = async () => {
     if (!form.file) return toast({ title: 'Select a CSV report first', variant: 'destructive' });
     if (!form.reportTypeCode) return toast({ title: 'Select the report type', variant: 'destructive' });
@@ -169,14 +213,17 @@ export default function OpsHubImport() {
           <Stat label="In Progress" value={summary.reports_in_progress || 0} hint="Parsing / applying" />
         </div>
 
+        <ExtractionGuide matrix={data.matrix} selectedType={form.reportTypeCode} onSelect={(code)=>setForm(p=>({...p,reportTypeCode:code}))} />
+
         <div className="grid grid-cols-1 xl:grid-cols-[1.05fr_1.95fr] gap-6">
           <section className="rounded-2xl border border-[hsl(var(--border))] bg-white shadow-sm p-5 h-fit">
             <div className="flex items-center gap-2 mb-5">
               <div className="w-9 h-9 rounded-xl bg-[hsl(var(--terracotta))]/10 flex items-center justify-center"><Upload className="w-4 h-4 text-[hsl(var(--terracotta))]" /></div>
-              <div><h2 className="font-heading text-xl text-[hsl(var(--cinder))]">Upload Seller Central Report</h2><p className="text-xs text-slate-400">CSV is supported in parser v3</p></div>
+              <div><h2 className="font-heading text-xl text-[hsl(var(--cinder))]">Upload Seller Central Report</h2><p className="text-xs text-slate-400">Select a report above, then upload the original Amazon CSV · parser v3</p></div>
             </div>
 
             <div className="space-y-4">
+              {selectedGuide && <div className="rounded-xl border border-orange-200 bg-orange-50/60 p-3"><div className="text-xs font-semibold">{selectedGuide.workspace} → {selectedGuide.section} → {selectedGuide.view}</div><div className="text-sm font-medium mt-1">{selectedGuide.report}</div><div className="text-xs text-slate-500 mt-1">{selectedGuide.instruction}</div></div>}
               <div className="space-y-1.5">
                 <Label>Report type</Label>
                 <Select value={form.reportTypeCode} onValueChange={v => setForm(p => ({ ...p, reportTypeCode: v }))}>
