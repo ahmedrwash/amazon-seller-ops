@@ -37,10 +37,13 @@ const FinancePage = () => {
   const { createCostEntry } = useCostEntries();
   const [costModalOpen, setCostModalOpen] = useState(false);
   const [entity, setEntity] = useState('all');
+  const [entities, setEntities] = useState([]);
   const [period, setPeriod] = useState('mtd');
   const [currency, setCurrency] = useState('USD');
   const [salesRows, setSalesRows] = useState([]);
   const [companyRows, setCompanyRows] = useState([]);
+  const [amazonFinanceRows, setAmazonFinanceRows] = useState([]);
+  const [adRows, setAdRows] = useState([]);
   const [inventoryRows, setInventoryRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState(null);
@@ -48,14 +51,18 @@ const FinancePage = () => {
   useEffect(() => {
     const load = async () => {
       setLoading(true); setDataError(null);
-      const [sales, companyData, inventory] = await Promise.all([
+      const [sales, companyData, inventory, amazonFinance, ads, entityData] = await Promise.all([
         supabase.from('sales_daily').select('sales_date,ordered_product_sales,units_ordered,total_order_items,refund_amount,currency,source').order('sales_date', { ascending: false }),
-        supabase.from('company_accounting_records').select('id,company,record_kind,currency,amount,occurred_on,as_of,details').order('occurred_on', { ascending: false, nullsFirst: false }),
-        supabase.from('inventory_snapshots').select('snapshot_date,total_inventory,available,reserved,source').order('snapshot_date', { ascending: false }).limit(1)
+        supabase.from('financial_transactions').select('id,legal_entity_id,transaction_date,transaction_type,description,original_amount,original_currency,reporting_amount,reporting_currency,payment_status,document_url,channel,marketplace,brand,sku,source').order('transaction_date', { ascending: false }),
+        supabase.from('inventory_snapshots').select('snapshot_date,total_inventory,available,reserved,source').order('snapshot_date', { ascending: false }).limit(1),
+        supabase.from('amazon_financial_transactions').select('transaction_date,transaction_type,amount,currency,source').order('transaction_date', { ascending: false }),
+        supabase.from('ad_performance_daily').select('performance_date,spend,ad_sales,ad_orders,ad_units,currency,source').order('performance_date', { ascending: false }),
+        supabase.from('legal_entities').select('id,legal_name,functional_currency,status').order('legal_name')
       ]);
-      const err = sales.error || companyData.error || inventory.error;
+      const err = sales.error || companyData.error || inventory.error || amazonFinance.error || ads.error || entityData.error;
       if (err) setDataError(err.message);
-      setSalesRows(sales.data || []); setCompanyRows(companyData.data || []); setInventoryRows(inventory.data || []); setLoading(false);
+      setSalesRows(sales.data || []); setCompanyRows(companyData.data || []); setInventoryRows(inventory.data || []);
+      setAmazonFinanceRows(amazonFinance.data || []); setAdRows(ads.data || []); setEntities(entityData.data || []); setLoading(false);
     };
     load();
   }, []);
@@ -74,23 +81,39 @@ const FinancePage = () => {
   ), [salesRows, currency, periodStart]);
 
   const filteredCompany = useMemo(() => companyRows.filter(r =>
-    r.currency === currency && (!periodStart || !r.occurred_on || r.occurred_on >= periodStart)
-  ), [companyRows, currency, periodStart]);
+    (r.reporting_currency === currency || r.original_currency === currency) &&
+    (entity === 'all' || r.legal_entity_id === entity) &&
+    (!periodStart || r.transaction_date >= periodStart)
+  ), [companyRows, currency, entity, periodStart]);
+
+  const filteredAmazonFinance = useMemo(() => amazonFinanceRows.filter(r =>
+    r.currency === currency && (!periodStart || r.transaction_date >= periodStart)
+  ), [amazonFinanceRows, currency, periodStart]);
+
+  const filteredAds = useMemo(() => adRows.filter(r =>
+    r.currency === currency && (!periodStart || r.performance_date >= periodStart)
+  ), [adRows, currency, periodStart]);
 
   const amazon = useMemo(() => {
     const sales = filteredSales.reduce((n, r) => n + Number(r.ordered_product_sales || 0), 0);
     const orders = filteredSales.reduce((n, r) => n + Number(r.total_order_items || 0), 0);
     const units = filteredSales.reduce((n, r) => n + Number(r.units_ordered || 0), 0);
     const refunds = filteredSales.reduce((n, r) => n + Number(r.refund_amount || 0), 0);
+    const fees = Math.abs(filteredAmazonFinance.filter(r => /fee|commission|fba|storage/i.test(r.transaction_type || '')).reduce((n, r) => n + Number(r.amount || 0), 0));
+    const ppc = filteredAds.reduce((n, r) => n + Number(r.spend || 0), 0);
     return { sales, orders, units, refunds, averageOrderValue: orders ? sales / orders : 0,
-      fees: 0, ppc: 0, profit: 0, inventoryUnits: Number(inventoryRows[0]?.total_inventory || 0) };
-  }, [filteredSales, inventoryRows]);
+      fees, ppc, profit: sales - refunds - fees - ppc, inventoryUnits: Number(inventoryRows[0]?.total_inventory || 0) };
+  }, [filteredSales, filteredAmazonFinance, filteredAds, inventoryRows]);
 
   const company = useMemo(() => {
-    const totalRecorded = filteredCompany.reduce((n, r) => n + Number(r.amount || 0), 0);
-    return { revenue: amazon.sales, expenses: totalRecorded, grossProfit: amazon.sales,
-      netProfit: amazon.sales - totalRecorded, cashInvested: totalRecorded, inventoryValue: 0,
-      payables: 0, transactions: filteredCompany.length };
+    const amount = (r) => Number(r.reporting_currency === currency ? r.reporting_amount : r.original_amount || 0);
+    const revenue = filteredCompany.filter(r => r.transaction_type === 'revenue').reduce((n, r) => n + amount(r), 0) + amazon.sales;
+    const expenses = filteredCompany.filter(r => ['expense','refund'].includes(r.transaction_type)).reduce((n, r) => n + amount(r), 0);
+    const funding = filteredCompany.filter(r => r.transaction_type === 'funding').reduce((n, r) => n + amount(r), 0);
+    const payables = filteredCompany.filter(r => ['due','partial','overdue'].includes(r.payment_status)).reduce((n, r) => n + amount(r), 0);
+    return { revenue, expenses, grossProfit: revenue - amazon.refunds - amazon.fees,
+      netProfit: revenue - expenses - amazon.refunds - amazon.fees - amazon.ppc, cashInvested: funding, inventoryValue: 0,
+      payables, transactions: filteredCompany.length };
   }, [filteredCompany, amazon.sales]);
 
   const handleCreateCost = async (data) => {
@@ -124,7 +147,7 @@ const FinancePage = () => {
           Company
           <select value={entity} onChange={(e) => setEntity(e.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white">
             <option value="all">All Companies</option>
-            <option value="framelens">Framelens OÜ</option>
+            {entities.map((item) => <option key={item.id} value={item.id}>{item.legal_name}</option>)}
           </select>
         </label>
         <label className="space-y-1.5 text-xs text-slate-400">
