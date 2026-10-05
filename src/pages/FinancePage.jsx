@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import {
   ArrowDownRight, ArrowUpRight, Building2, Boxes, CircleDollarSign,
@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import CostEntryModal from '@/components/finance/CostEntryModal';
 import { useCostEntries } from '@/hooks/useFinance';
 import { formatCurrency } from '@/utils/financeUtils';
+import { supabase } from '@/lib/customSupabaseClient';
 
 const MetricCard = ({ label, value, icon: Icon, hint }) => (
   <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 shadow-sm">
@@ -37,32 +38,60 @@ const FinancePage = () => {
   const [costModalOpen, setCostModalOpen] = useState(false);
   const [entity, setEntity] = useState('all');
   const [period, setPeriod] = useState('mtd');
-  const [currency, setCurrency] = useState('EUR');
+  const [currency, setCurrency] = useState('USD');
+  const [salesRows, setSalesRows] = useState([]);
+  const [companyRows, setCompanyRows] = useState([]);
+  const [inventoryRows, setInventoryRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [dataError, setDataError] = useState(null);
 
-  // UI v2 deliberately renders no invented finance values.
-  // These zero states are replaced by source-backed aggregates in the data integration step.
-  const company = useMemo(() => ({
-    revenue: 0,
-    expenses: 0,
-    grossProfit: 0,
-    netProfit: 0,
-    cashInvested: 0,
-    inventoryValue: 0,
-    payables: 0,
-    transactions: 0,
-  }), [entity, period, currency]);
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true); setDataError(null);
+      const [sales, companyData, inventory] = await Promise.all([
+        supabase.from('sales_daily').select('sales_date,ordered_product_sales,units_ordered,total_order_items,refund_amount,currency,source').order('sales_date', { ascending: false }),
+        supabase.from('company_accounting_records').select('id,company,record_kind,currency,amount,occurred_on,as_of,details').order('occurred_on', { ascending: false, nullsFirst: false }),
+        supabase.from('inventory_snapshots').select('snapshot_date,total_inventory,available,reserved,source').order('snapshot_date', { ascending: false }).limit(1)
+      ]);
+      const err = sales.error || companyData.error || inventory.error;
+      if (err) setDataError(err.message);
+      setSalesRows(sales.data || []); setCompanyRows(companyData.data || []); setInventoryRows(inventory.data || []); setLoading(false);
+    };
+    load();
+  }, []);
 
-  // Amazon metrics must be populated only from Amazon Ops Hub.
-  const amazon = useMemo(() => ({
-    sales: 0,
-    orders: 0,
-    units: 0,
-    averageOrderValue: 0,
-    fees: 0,
-    ppc: 0,
-    profit: 0,
-    inventoryUnits: 0,
-  }), [period, currency]);
+  const periodStart = useMemo(() => {
+    if (period === 'all') return null;
+    const d = new Date();
+    if (period === 'mtd') d.setDate(1);
+    if (period === 'qtd') d.setMonth(Math.floor(d.getMonth() / 3) * 3, 1);
+    if (period === 'ytd') d.setMonth(0, 1);
+    return d.toISOString().slice(0, 10);
+  }, [period]);
+
+  const filteredSales = useMemo(() => salesRows.filter(r =>
+    r.currency === currency && (!periodStart || r.sales_date >= periodStart)
+  ), [salesRows, currency, periodStart]);
+
+  const filteredCompany = useMemo(() => companyRows.filter(r =>
+    r.currency === currency && (!periodStart || !r.occurred_on || r.occurred_on >= periodStart)
+  ), [companyRows, currency, periodStart]);
+
+  const amazon = useMemo(() => {
+    const sales = filteredSales.reduce((n, r) => n + Number(r.ordered_product_sales || 0), 0);
+    const orders = filteredSales.reduce((n, r) => n + Number(r.total_order_items || 0), 0);
+    const units = filteredSales.reduce((n, r) => n + Number(r.units_ordered || 0), 0);
+    const refunds = filteredSales.reduce((n, r) => n + Number(r.refund_amount || 0), 0);
+    return { sales, orders, units, refunds, averageOrderValue: orders ? sales / orders : 0,
+      fees: 0, ppc: 0, profit: 0, inventoryUnits: Number(inventoryRows[0]?.total_inventory || 0) };
+  }, [filteredSales, inventoryRows]);
+
+  const company = useMemo(() => {
+    const totalRecorded = filteredCompany.reduce((n, r) => n + Number(r.amount || 0), 0);
+    return { revenue: amazon.sales, expenses: totalRecorded, grossProfit: amazon.sales,
+      netProfit: amazon.sales - totalRecorded, cashInvested: totalRecorded, inventoryValue: 0,
+      payables: 0, transactions: filteredCompany.length };
+  }, [filteredCompany, amazon.sales]);
 
   const handleCreateCost = async (data) => {
     await createCostEntry(data);
@@ -123,7 +152,7 @@ const FinancePage = () => {
           <TabsTrigger value="reports">Reports</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="mt-6 space-y-8">
+        <TabsContent value="overview" className="mt-6 space-y-8">\n          {loading && <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 text-sm text-slate-400">Loading financial data...</div>}\n          {dataError && <div className="rounded-xl border border-red-900/50 bg-red-950/20 p-4 text-sm text-red-300">Data error: {dataError}</div>}
           <section>
             <div className="mb-4 flex items-center justify-between">
               <div>
