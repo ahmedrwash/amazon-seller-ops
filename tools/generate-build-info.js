@@ -19,7 +19,7 @@ const inferredBranch = git(['name-rev', '--name-only', '--exclude=tags/*', 'HEAD
   .replace(/^remotes\/origin\//, '');
 const branch = process.env.GITHUB_REF_NAME || checkedOutBranch || inferredBranch;
 const buildInfo = {
-  commit: fullCommit === 'unknown' ? fullCommit : fullCommit.slice(0, 8),
+  commit: fullCommit,
   branch: branch || 'detached',
   builtAt: new Date().toISOString(),
 };

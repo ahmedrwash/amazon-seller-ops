@@ -259,12 +259,10 @@ const addTransformIndexHtml = {
 
 		return {
 			html,
-			tags,
+		tags: isDev ? tags : [],
 		};
 	},
 };
-
-console.warn = () => {};
 
 const logger = createLogger()
 const loggerError = logger.error
@@ -286,7 +284,7 @@ export default defineConfig({
 	],
 	server: {
 		port: parseInt(process.env.PORT) || 5173,
-		cors: true,
+		cors: { origin: ['http://localhost:5173', 'http://127.0.0.1:5173'] },
 		headers: {
 			'Cross-Origin-Embedder-Policy': 'credentialless',
 		},

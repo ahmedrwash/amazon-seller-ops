@@ -18,7 +18,7 @@ export function useEmailCredentials() {
 
       const { data, error } = await supabase
         .from('email_credentials')
-        .select('*')
+        .select('id,created_at,updated_at,email_address,imap_server,imap_port,imap_username,smtp_server,smtp_port,smtp_username,is_active,last_tested_at,test_status,test_error,created_by,updated_by')
         .order('created_at', { ascending: false });
 
       if (error) throw error;

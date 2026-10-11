@@ -33,6 +33,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Verify data lineage and missing metrics
+        run: npm test
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
+
       - name: Build
         run: npm run build
 

@@ -1,23 +1,8 @@
-import CryptoJS from 'crypto-js';
-
-// In a real production app, this key should be an environment variable 
-// injected at build time or retrieved from a secure vault.
-// For this demo environment, we use a fallback if the env var isn't set.
-const ENCRYPTION_KEY = import.meta.env.VITE_EMAIL_ENCRYPTION_KEY || 'demo-encryption-key-do-not-use-in-prod';
-
-/**
- * Encrypts a password string using AES encryption
- * @param {string} password - The password to encrypt
- * @returns {string} - The encrypted password string
- */
+// Frontend environment variables are public. Credential encryption belongs in
+// a server-side secret store; fail closed until that workflow is available.
 export const encryptPassword = (password) => {
   if (!password) return '';
-  try {
-    return CryptoJS.AES.encrypt(password, ENCRYPTION_KEY).toString();
-  } catch (error) {
-    console.error('Encryption failed:', error);
-    return '';
-  }
+  throw new Error('Password changes require secure server-side credential storage. Contact your administrator.');
 };
 
 /**
@@ -27,13 +12,7 @@ export const encryptPassword = (password) => {
  */
 export const decryptPassword = (encryptedPassword) => {
   if (!encryptedPassword) return '';
-  try {
-    const bytes = CryptoJS.AES.decrypt(encryptedPassword, ENCRYPTION_KEY);
-    return bytes.toString(CryptoJS.enc.Utf8);
-  } catch (error) {
-    console.error('Decryption failed:', error);
-    return '';
-  }
+  throw new Error('Stored passwords cannot be decrypted in the browser.');
 };
 
 /**
