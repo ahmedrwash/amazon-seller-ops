@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import {
   ArrowDownRight, ArrowUpRight, Building2, Boxes, CircleDollarSign,
-  FileText, Landmark, PackageCheck, Plus, ReceiptText, ShoppingCart, WalletCards
+  FileText, Landmark, PackageCheck, Plus, Receipt, ShoppingCart, WalletCards
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -190,7 +190,7 @@ const FinancePage = () => {
               <MetricCard label="Net Profit / Loss" value={money(company.netProfit)} icon={WalletCards} />
               <MetricCard label="Cash Invested / Funding" value={money(company.cashInvested)} icon={Landmark} />
               <MetricCard label="Inventory Value" value={money(company.inventoryValue)} icon={Boxes} />
-              <MetricCard label="Outstanding Payables" value={money(company.payables)} icon={ReceiptText} />
+              <MetricCard label="Outstanding Payables" value={money(company.payables)} icon={Receipt} />
               <MetricCard label="Transactions" value={company.transactions.toLocaleString()} icon={FileText} />
             </div>
           </section>
@@ -207,7 +207,7 @@ const FinancePage = () => {
               <MetricCard label="Sales" value={money(amazon.sales)} icon={CircleDollarSign} />
               <MetricCard label="Orders" value={amazon.orders.toLocaleString()} icon={ShoppingCart} />
               <MetricCard label="Units Sold" value={amazon.units.toLocaleString()} icon={PackageCheck} />
-              <MetricCard label="Average Order Value" value={money(amazon.averageOrderValue)} icon={ReceiptText} />
+              <MetricCard label="Average Order Value" value={money(amazon.averageOrderValue)} icon={Receipt} />
               <MetricCard label="Amazon Fees" value={money(amazon.fees)} icon={ArrowDownRight} />
               <MetricCard label="PPC Spend" value={money(amazon.ppc)} icon={ArrowDownRight} />
               <MetricCard label="Amazon Profit" value={money(amazon.profit)} icon={ArrowUpRight} />
