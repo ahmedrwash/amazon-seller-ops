@@ -62,7 +62,7 @@ export function useEmailCredentials() {
       const { data, error } = await supabase
         .from('email_credentials')
         .insert([payload])
-        .select()
+        .select('id,email_address,is_active')
         .single();
 
       if (error) throw error;
@@ -111,7 +111,7 @@ export function useEmailCredentials() {
         .from('email_credentials')
         .update(updates)
         .eq('id', id)
-        .select()
+        .select('id,email_address,is_active')
         .maybeSingle();
 
       if (error) throw error;

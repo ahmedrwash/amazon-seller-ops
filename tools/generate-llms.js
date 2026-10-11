@@ -82,7 +82,16 @@ function extractRoutes(appJsxPath) {
 }
 
 function findReactFiles(dir) {
-  return fs.readdirSync(dir).map(item => path.join(dir, item));
+  const files = [];
+  for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+    const itemPath = path.join(dir, item.name);
+    if (item.isDirectory()) {
+      files.push(...findReactFiles(itemPath));
+    } else if (item.isFile() && /\.(jsx?|tsx?)$/i.test(item.name)) {
+      files.push(itemPath);
+    }
+  }
+  return files;
 }
 
 function extractHelmetData(content, filePath, routes) {
@@ -103,7 +112,7 @@ function extractHelmetData(content, filePath, routes) {
   const description = cleanText(descMatch?.[1]);
   
   const fileName = path.basename(filePath, path.extname(filePath));
-  const url = routes.length && routes.has(fileName) 
+  const url = routes.size && routes.has(fileName) 
     ? routes.get(fileName) 
     : generateFallbackUrl(fileName);
   
@@ -151,7 +160,7 @@ function main() {
   let pages = [];
   
   if (!fs.existsSync(pagesDir)) {
-    pages.push(processPageFile(appJsxPath, []))
+    pages.push(processPageFile(appJsxPath, new Map()))
     pages = pages.filter(Boolean);
   } else {
     const routes = extractRoutes(appJsxPath);
@@ -166,7 +175,6 @@ function main() {
     console.error('❌ No pages with Helmet components found!');
     process.exit(1);
   }
-
 
   const llmsTxtContent = generateLlmsTxt(pages);
   const outputPath = path.join(process.cwd(), 'public', 'llms.txt');

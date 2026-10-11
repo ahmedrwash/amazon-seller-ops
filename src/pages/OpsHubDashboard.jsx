@@ -75,7 +75,7 @@ export default function OpsHubDashboard() {
 
   const productCards = useMemo(() => products.map(pm => {
     const card = productMetrics(pm, { sales: performance, ads, inventory, economics, weekly }, snapshot.window);
-    return { ...card, latest: card.sales.at(-1), weeklyLatest: card.weekly, revenue7: card.revenue, units7: card.units,
+    return { ...card, latest: card.sales.map(row => row.sales_date).sort().at(-1), weeklyLatest: card.weekly, revenue7: card.revenue, units7: card.units,
       adSpend7: card.spend, acos7: card.acos, tacos7: card.tacos, hasAds: card.ads.length > 0 };
   }), [products, performance, ads, inventory, economics, weekly, snapshot]);
   const currencies = [...new Set(products.map(pm => pm.currency).filter(Boolean))];
@@ -182,7 +182,7 @@ export default function OpsHubDashboard() {
 
                 <div className="px-5 pb-4 text-xs text-slate-500">{coverage}/7 daily dates · Sessions {num(sessions)} · Conversion {pct(conversion)} · Source: {[...new Set(sales.map(row => row.source_ref || row.source))].join(', ') || 'Unavailable'} · Unit economics: {econ?.cost_status || 'missing'} costs / {econ?.fee_status || 'missing'} fees</div>
                 <div className="px-5 py-3 bg-slate-50 border-t text-xs text-slate-500 flex flex-wrap justify-between gap-2">
-                  <span>Latest daily sales: {freshness(snapshot?.window.end)} · Weekly report: {weeklyLatest?.period_end || 'Not available'}</span>
+                  <span>Latest daily sales: {freshness(latest)} · Weekly report: {weeklyLatest?.period_end || 'Not available'}</span>
                   <span>Latest inventory: {freshness(inv?.snapshot_date)}</span>
                 </div>
               </article>

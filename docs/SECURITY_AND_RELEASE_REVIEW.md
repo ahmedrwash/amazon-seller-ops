@@ -17,7 +17,7 @@ Compatible transitive fixes were applied with `npm audit fix --package-lock-only
 React Router DOM was explicitly assessed and upgraded to **7.18.4** to address redirects and hydration advisories. This application uses React 18, Node 22 in CI, BrowserRouter/Routes, and absolute navigation paths; it has no nested splat route, data router loaders/actions, or SSR hydration. Version 7 retains these DOM exports. Full lint/build verification and routing smoke tests are release gates.
 `tailwindcss-animate` was moved to devDependencies because it is used only by the Tailwind build configuration. This also correctly classifies the Tailwind peer dependency as build-time. The browser crypto dependency was removed after disabling client-side password encryption.
 
-Final production dependency audit: **0 findings**. Full audit: **7 packages: 5 High, 2 Moderate**:
+Final production dependency audit: **0 findings**. Full audit: **8 packages: 5 High, 3 Moderate**:
 
 | Package | Severity | Scope / action |
 | --- | --- | --- |
@@ -28,8 +28,9 @@ Final production dependency audit: **0 findings**. Full audit: **7 packages: 5 H
 | tailwindcss | High | Inherits build dependency findings; retain 3.x pending assessed CSS migration |
 | postcss-selector-parser | Moderate | GHSA-rj75-hqrm-r3gf; nested parser in Tailwind 3.x |
 | postcss-nested | Moderate | Inherits selector-parser finding |
+| tailwindcss-animate | Moderate | npm 10 reports the Tailwind peer finding through this build plugin |
 
-These are seven affected package nodes, not seven independent vulnerabilities. Do not feed untrusted patterns/CSS to the build tools. They do not ship as runtime server packages in this static Vite application. A Tailwind 4 migration needs separate visual regression testing; no breaking forced migration was performed here.
+These are eight affected package nodes, not eight independent vulnerabilities. Do not feed untrusted patterns/CSS to the build tools. They do not ship as runtime server packages in this static Vite application. A Tailwind 4 migration needs separate visual regression testing; no breaking forced migration was performed here.
 `react-beautiful-dnd` and Recharts 2.x remain deprecated. No audit finding was returned for them; replacing them is separate work.
 
 ## Frontend security
@@ -77,6 +78,8 @@ Dashboard reads owner-scoped Supabase sources with pagination and independent so
 Import/write/Delta Update code was not changed. `sales_daily` retains its unique product-marketplace/date constraint. Live Delta Update execution was not attempted because it writes business facts; non-destructive lineage tests cover separation, not the untracked deployed Edge Function internals.
 
 ## Validation and deployment
+
+The first Linux CI run exposed missing optional `@emnapi` lock entries. The lockfile was reconciled with npm 10.9.9 (matching CI), including platform-independent optional dependencies; the npm 10 clean-install dry run passed. The feature branch incorporates staging's existing Data Sources Hub and LLMS generator changes to test the full integration.
 
 - `npm ci`, `npm run lint`, `npm test` (four data-lineage tests), `npm run build`: local checks passed.
 - Build emits full commit metadata; production debug-hook absence was checked in generated HTML.
