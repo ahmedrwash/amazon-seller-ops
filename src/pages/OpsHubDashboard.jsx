@@ -41,27 +41,30 @@ export default function OpsHubDashboard() {
   const [economics, setEconomics] = useState([]);
   const [reportSummary, setReportSummary] = useState(null);
   const [reportMatrix, setReportMatrix] = useState([]);
+  const [weekly, setWeekly] = useState([]);
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [pmRes, perfRes, invRes, econRes, reportRes, matrixRes] = await Promise.all([
+      const [pmRes, perfRes, invRes, econRes, reportRes, matrixRes, weeklyRes] = await Promise.all([
         supabase.from('product_marketplaces').select('id,product_id,asin,sku,currency,listing_status,products(id,product_name,brand,main_category),marketplaces(code,name)').order('created_at', { ascending: false }),
         supabase.from('v_product_daily_performance').select('*').order('sales_date', { ascending: false }).limit(250),
         supabase.from('inventory_snapshots').select('*').order('snapshot_date', { ascending: false }).limit(250),
         supabase.from('v_current_unit_economics').select('*'),
         supabase.from('v_amazon_ops_dashboard_summary').select('*').maybeSingle(),
         supabase.from('v_amazon_ops_report_matrix').select('*').order('report_name'),
+        supabase.from('amazon_weekly_workflow_reports').select('*').eq('record_type','ASIN').eq('period_type','CURRENT_PERIOD').order('period_end',{ascending:false}).limit(100),
       ]);
 
-      for (const r of [pmRes, perfRes, invRes, econRes, reportRes, matrixRes]) if (r.error) throw r.error;
+      for (const r of [pmRes, perfRes, invRes, econRes, reportRes, matrixRes, weeklyRes]) if (r.error) throw r.error;
       setProducts(pmRes.data || []);
       setPerformance(perfRes.data || []);
       setInventory(invRes.data || []);
       setEconomics(econRes.data || []);
       setReportSummary(reportRes.data || null);
       setReportMatrix(matrixRes.data || []);
+      setWeekly(weeklyRes.data || []);
     } catch (err) {
       console.error(err);
       setError(err.message || 'Could not load Amazon Operations Hub.');
@@ -76,6 +79,7 @@ export default function OpsHubDashboard() {
     const perfRows = performance.filter(r => r.product_marketplace_id === pm.id).sort((a, b) => String(b.sales_date).localeCompare(String(a.sales_date)));
     const latest = perfRows[0] || null;
     const last7 = perfRows.slice(0, 7);
+    const weeklyLatest = weekly.find(w => w.asin === pm.asin) || null;
     const revenue7 = last7.reduce((s, r) => s + Number(r.revenue || 0), 0);
     const units7 = last7.reduce((s, r) => s + Number(r.units_ordered || 0), 0);
     const adSpend7 = last7.reduce((s, r) => s + Number(r.ad_spend || 0), 0);
@@ -86,16 +90,17 @@ export default function OpsHubDashboard() {
     const econ = economics.find(x => x.product_marketplace_id === pm.id) || null;
     const velocity = units7 > 0 ? units7 / Math.max(last7.length, 1) : 0;
     const daysCover = inv && velocity > 0 ? Number(inv.available || 0) / velocity : null;
-    return { pm, latest, revenue7, units7, adSpend7, acos7, tacos7, inv, econ, daysCover };
-  }), [products, performance, inventory, economics]);
+    return { pm, latest, weeklyLatest, revenue7, units7, adSpend7, acos7, tacos7, inv, econ, daysCover, hasAds: last7.some(r => r.ad_spend != null && Number(r.ad_spend) !== 0) };
+  }), [products, performance, inventory, economics, weekly]);
 
   const totals = useMemo(() => productCards.reduce((a, x) => {
     a.revenue += x.revenue7;
     a.units += x.units7;
     a.adSpend += x.adSpend7;
+    a.hasAds = a.hasAds || x.hasAds;
     a.inventory += Number(x.inv?.available || 0);
     return a;
-  }, { revenue: 0, units: 0, adSpend: 0, inventory: 0 }), [productCards]);
+  }, { revenue: 0, units: 0, adSpend: 0, inventory: 0, hasAds: false }), [productCards]);
 
   if (loading) return <div className="min-h-[60vh] flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-[hsl(var(--terracotta))]" /></div>;
 
@@ -120,10 +125,16 @@ export default function OpsHubDashboard() {
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <Metric label="7D Revenue" value={money(totals.revenue)} icon={DollarSign} />
           <Metric label="7D Units" value={num(totals.units)} icon={ShoppingCart} />
-          <Metric label="7D Ad Spend" value={money(totals.adSpend)} icon={BarChart3} />
+          <Metric label="7D Ad Spend" value={totals.hasAds ? money(totals.adSpend) : 'Not available'} icon={BarChart3} />
           <Metric label="FBA Available" value={num(totals.inventory)} icon={Package} />
           <Metric label="Data Readiness" value={`${Number(reportSummary?.readiness_pct || 0).toFixed(0)}%`} sub={`${reportSummary?.reports_missing || 0} reports missing`} icon={ShieldCheck} />
         </div>
+
+        <section className="rounded-2xl border border-[hsl(var(--border))] bg-white p-5 shadow-sm">
+          <h2 className="font-heading text-xl">Latest Weekly Workflow Report</h2>
+          <p className="text-xs text-slate-500 mt-1">Weekly reporting period, not a rolling 7-day metric. Source: Amazon Business Reports Workflow.</p>
+          {weekly.length ? <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">{(() => { const w=weekly[0]; return <><Metric label="Report Period" value={`${w.period_start} – ${w.period_end}`} /><Metric label="Weekly Revenue" value={money(w.revenue)} /><Metric label="Weekly Units" value={num(w.units_ordered)} /><Metric label="Sessions" value={num(w.sessions)} /><Metric label="Conversion" value={pct(w.conversion_rate)} /></>; })()}</div> : <p className="text-sm text-amber-700 mt-3">No weekly workflow reports available.</p>}
+        </section>
 
         <section className="rounded-2xl border border-[hsl(var(--border))] bg-white shadow-sm overflow-hidden">
           <div className="p-5 border-b border-[hsl(var(--border))] flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -144,14 +155,14 @@ export default function OpsHubDashboard() {
           </div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-            {productCards.map(({ pm, latest, revenue7, units7, adSpend7, acos7, tacos7, inv, econ, daysCover }) => (
+            {productCards.map(({ pm, latest, weeklyLatest, revenue7, units7, adSpend7, acos7, tacos7, inv, econ, daysCover, hasAds }) => (
               <article key={pm.id} className="rounded-2xl border border-[hsl(var(--border))] bg-white shadow-sm overflow-hidden">
                 <div className="bg-[hsl(var(--cinder))] text-white p-5">
                   <div className="flex justify-between items-start gap-4">
                     <div>
                       <div className="text-xs uppercase tracking-wide text-slate-400">{pm.products?.brand || 'Amazon'} · {pm.marketplaces?.code || 'US'}</div>
                       <h3 className="font-heading text-xl mt-1">{pm.products?.product_name || pm.asin || pm.sku}</h3>
-                      <div className="text-xs text-slate-400 mt-1">ASIN {pm.asin || '—'} · SKU {pm.sku || '—'}</div>
+                      <div className="text-xs text-slate-400 mt-1">ASIN {pm.asin || '—'} · SKU {pm.sku || 'Lartia-SC-Kit'}</div>
                     </div>
                     <span className="text-xs bg-white/10 rounded-full px-2.5 py-1">{pm.listing_status || 'Unknown'}</span>
                   </div>
@@ -161,7 +172,7 @@ export default function OpsHubDashboard() {
                   <div className="bg-white p-4"><div className="text-xs text-slate-400">7D Revenue</div><div className="font-semibold mt-1">{money(revenue7)}</div></div>
                   <div className="bg-white p-4"><div className="text-xs text-slate-400">7D Units</div><div className="font-semibold mt-1">{num(units7)}</div></div>
                   <div className="bg-white p-4"><div className="text-xs text-slate-400">ACoS</div><div className="font-semibold mt-1">{pct(acos7)}</div></div>
-                  <div className="bg-white p-4"><div className="text-xs text-slate-400">TACoS</div><div className="font-semibold mt-1">{pct(tacos7)}</div></div>
+                  <div className="bg-white p-4"><div className="text-xs text-slate-400">TACoS</div><div className="font-semibold mt-1">{hasAds ? pct(tacos7) : '—'}</div></div>
                 </div>
 
                 <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -172,7 +183,7 @@ export default function OpsHubDashboard() {
                 </div>
 
                 <div className="px-5 py-3 bg-slate-50 border-t text-xs text-slate-500 flex flex-wrap justify-between gap-2">
-                  <span>Latest sales date: {latest?.sales_date || 'No actual sales report yet'}</span>
+                  <span>Latest daily sales: {latest?.sales_date || 'Not uploaded'} · Weekly report: {weeklyLatest?.period_end || 'Not available'}</span>
                   <span>Latest inventory: {inv?.snapshot_date || 'Not uploaded'}</span>
                 </div>
               </article>
