@@ -87,7 +87,7 @@ export const AuthProvider = ({ children }) => {
         id: authUser.id,
         email: authUser.email,
         full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0],
-        role: authUser.user_metadata?.role || ROLES.VIEWER,
+        role: ROLES.VIEWER,
         active: true,
         last_login: new Date().toISOString(),
         allowed_marketplace_ids: [],

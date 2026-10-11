@@ -108,6 +108,7 @@ const EmailCredentialsForm = ({ initialData, onSave, onCancel }) => {
 
   return (
     <div className="space-y-6 py-4">
+      <p className="rounded border border-amber-600 bg-amber-950 p-3 text-sm text-amber-100">New accounts and password changes require secure server-side credential storage. Existing account metadata can still be updated.</p>
       {/* IMAP Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">

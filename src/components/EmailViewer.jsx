@@ -91,7 +91,13 @@ const EmailViewer = ({ email, attachments = [] }) => {
             ) : (
                <div className="prose prose-invert max-w-none text-sm">
                   {email.body_html ? (
-                      <div dangerouslySetInnerHTML={{ __html: email.body_html }} />
+                      <iframe
+                        title="Email HTML content"
+                        sandbox=""
+                        referrerPolicy="no-referrer"
+                        className="min-h-[400px] w-full rounded bg-white"
+                        srcDoc={'<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; form-action \'none\'; base-uri \'none\'"><body>' + email.body_html + '</body>'}
+                      />
                   ) : (
                       <p className="text-slate-500">No HTML content available.</p>
                   )}
