@@ -42,12 +42,14 @@ export default function OpsHubDashboard() {
   const [reportSummary, setReportSummary] = useState(null);
   const [reportMatrix, setReportMatrix] = useState([]);
   const [weekly, setWeekly] = useState([]);
+  const [adRowCount, setAdRowCount] = useState(0);
+  const [activeTab,setActiveTab] = useState('overview');
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [pmRes, perfRes, invRes, econRes, reportRes, matrixRes, weeklyRes] = await Promise.all([
+      const [pmRes, perfRes, invRes, econRes, reportRes, matrixRes, weeklyRes, adsRes] = await Promise.all([
         supabase.from('product_marketplaces').select('id,product_id,asin,sku,currency,listing_status,products(id,product_name,brand,main_category),marketplaces(code,name)').order('created_at', { ascending: false }),
         supabase.from('v_product_daily_performance').select('*').order('sales_date', { ascending: false }).limit(250),
         supabase.from('inventory_snapshots').select('*').order('snapshot_date', { ascending: false }).limit(250),
@@ -55,9 +57,10 @@ export default function OpsHubDashboard() {
         supabase.from('v_amazon_ops_dashboard_summary').select('*').maybeSingle(),
         supabase.from('v_amazon_ops_report_matrix').select('*').order('report_name'),
         supabase.from('amazon_weekly_workflow_reports').select('*').eq('record_type','ASIN').eq('period_type','CURRENT_PERIOD').order('period_end',{ascending:false}).limit(100),
+        supabase.from('ad_performance_daily').select('id',{count:'exact',head:true}),
       ]);
 
-      for (const r of [pmRes, perfRes, invRes, econRes, reportRes, matrixRes, weeklyRes]) if (r.error) throw r.error;
+      for (const r of [pmRes, perfRes, invRes, econRes, reportRes, matrixRes, weeklyRes, adsRes]) if (r.error) throw r.error;
       setProducts(pmRes.data || []);
       setPerformance(perfRes.data || []);
       setInventory(invRes.data || []);
@@ -65,6 +68,7 @@ export default function OpsHubDashboard() {
       setReportSummary(reportRes.data || null);
       setReportMatrix(matrixRes.data || []);
       setWeekly(weeklyRes.data || []);
+      setAdRowCount(adsRes.count || 0);
     } catch (err) {
       console.error(err);
       setError(err.message || 'Could not load Amazon Operations Hub.');
@@ -120,23 +124,24 @@ export default function OpsHubDashboard() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 md:px-6 mt-6 space-y-6">
+        <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">{[['overview','Overview'],['sales','Sales & Traffic'],['ads','Advertising'],['stock','Inventory'],['quality','Data Quality']].map(([key,label])=><button key={key} onClick={()=>setActiveTab(key)} className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${activeTab===key?'bg-slate-900 text-white':'bg-white text-slate-600 hover:bg-slate-100'}`}>{label}</button>)}</div>
         {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 flex items-center gap-2"><AlertTriangle className="w-4 h-4" />{error}</div>}
 
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {(activeTab==='overview'||activeTab==='sales') && <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <Metric label="7D Revenue" value={money(totals.revenue)} icon={DollarSign} />
           <Metric label="7D Units" value={num(totals.units)} icon={ShoppingCart} />
           <Metric label="7D Ad Spend" value={totals.hasAds ? money(totals.adSpend) : 'Not available'} icon={BarChart3} />
           <Metric label="FBA Available" value={num(totals.inventory)} icon={Package} />
           <Metric label="Data Readiness" value={`${Number(reportSummary?.readiness_pct || 0).toFixed(0)}%`} sub={`${reportSummary?.reports_missing || 0} reports missing`} icon={ShieldCheck} />
-        </div>
+        </div>}
 
-        <section className="rounded-2xl border border-[hsl(var(--border))] bg-white p-5 shadow-sm">
+        {(activeTab==='overview'||activeTab==='sales') && <section className="rounded-2xl border border-[hsl(var(--border))] bg-white p-5 shadow-sm">
           <h2 className="font-heading text-xl">Latest Weekly Workflow Report</h2>
           <p className="text-xs text-slate-500 mt-1">Weekly reporting period, not a rolling 7-day metric. Source: Amazon Business Reports Workflow.</p>
           {weekly.length ? <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">{(() => { const w=weekly[0]; return <><Metric label="Report Period" value={`${w.period_start} – ${w.period_end}`} /><Metric label="Weekly Revenue" value={money(w.revenue)} /><Metric label="Weekly Units" value={num(w.units_ordered)} /><Metric label="Sessions" value={num(w.sessions)} /><Metric label="Conversion" value={pct(w.conversion_rate)} /></>; })()}</div> : <p className="text-sm text-amber-700 mt-3">No weekly workflow reports available.</p>}
-        </section>
+        </section>}
 
-        <section className="rounded-2xl border border-[hsl(var(--border))] bg-white shadow-sm overflow-hidden">
+        {(activeTab==='overview'||activeTab==='quality') && <section className="rounded-2xl border border-[hsl(var(--border))] bg-white shadow-sm overflow-hidden">
           <div className="p-5 border-b border-[hsl(var(--border))] flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div><h2 className="font-heading text-xl">Data Readiness</h2><p className="text-xs text-slate-400">What the operating team still needs to upload</p></div>
             <Button variant="outline" size="sm" onClick={() => navigate('/ops-hub/import')}>Open Report Center</Button>
@@ -145,9 +150,13 @@ export default function OpsHubDashboard() {
             {reportMatrix.map(r => <HealthPill key={`${r.report_type_code}-${r.marketplace_code}`} label={`${r.report_name}: ${r.readiness_status}`} status={r.readiness_status} />)}
             {!reportMatrix.length && <span className="text-sm text-slate-400">No operating schedule configured.</span>}
           </div>
-        </section>
+        </section>}
 
-        {productCards.length === 0 ? (
+        {(activeTab==='overview'||activeTab==='ads') && <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm"><h2 className="font-heading text-xl">Advertising Performance</h2>{adRowCount===0?<div className="text-center py-10"><BarChart3 className="mx-auto text-slate-300 w-10 h-10"/><p className="font-semibold mt-3">No advertising data available</p><p className="text-sm text-slate-500 mt-1">Import Sponsored Products Campaign and Search Term reports to calculate ACoS, ROAS and TACoS.</p><Button onClick={()=>navigate('/ops-hub/import')} className="mt-4">Import PPC Report</Button></div>:<p className="text-sm text-slate-600 mt-3">{num(adRowCount)} campaign-day records available. See normalized campaign performance for attribution-aware reporting.</p>}</section>}
+
+        {(activeTab==='overview'||activeTab==='stock') && <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm"><h2 className="font-heading text-xl">Inventory Freshness</h2><p className="text-sm text-slate-600 mt-2">Latest stored snapshot: {inventory[0]?.snapshot_date || 'Unavailable'}. Stock values are historical snapshots, not live inventory.</p><Button variant="outline" className="mt-3" onClick={()=>navigate('/ops-hub/import')}>Import Updated Inventory</Button></section>}
+
+        {(activeTab==='overview'||activeTab==='sales'||activeTab==='stock') && (productCards.length === 0 ? (
           <div className="rounded-2xl border border-[hsl(var(--border))] bg-white p-16 text-center shadow-sm">
             <Package className="w-12 h-12 mx-auto text-slate-300 mb-4" />
             <h2 className="font-heading text-2xl">No product marketplaces</h2>
@@ -189,7 +198,7 @@ export default function OpsHubDashboard() {
               </article>
             ))}
           </div>
-        )}
+        ))}
       </div>
     </div>
   );
