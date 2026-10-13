@@ -18,7 +18,7 @@ export async function loadOpsHubDashboard() {
     .eq('owner_id', user.id).order('sales_date', { ascending: false }).limit(1);
   const window = sevenDayWindow(latestError ? null : latest?.[0]?.sales_date);
   const sources = {
-    products: () => supabase.from('product_marketplaces').select('id,owner_id,product_id,asin,sku,currency,listing_status,products(id,product_name,brand,main_category),marketplaces(code,name)').eq('owner_id', user.id).order('id'),
+    products: () => supabase.from('product_marketplaces').select('id,owner_id:owner,product_id,asin,sku,currency,listing_status,products(id,product_name,brand,main_category),marketplaces(code,name)').eq('owner', user.id).order('id'),
     sales: () => supabase.from('sales_daily').select('*').eq('owner_id', user.id).gte('sales_date', window.start || '9999-01-01').lte('sales_date', window.end || '9999-01-01').order('id'),
     ads: () => supabase.from('ad_performance_daily').select('*').eq('owner_id', user.id).gte('performance_date', window.start || '9999-01-01').lte('performance_date', window.end || '9999-01-01').order('id'),
     inventory: () => supabase.from('inventory_snapshots').select('*').eq('owner_id', user.id).order('id'),
