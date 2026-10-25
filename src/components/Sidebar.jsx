@@ -91,6 +91,7 @@ const Sidebar = () => {
     if (hasOpsHubAccess) {
       const dashboardIndex = items.findIndex(i => i.to === '/dashboard');
       const opsHubItem = { to: '/ops-hub', icon: BarChart3, label: 'Amazon Ops Hub', section: 'Main' };
+      items.push({ to: '/ops-hub/advertising', icon: BarChart3, label: 'Advertising', section: 'Marketing' });
       if (dashboardIndex >= 0) {
         items.splice(dashboardIndex + 1, 0, opsHubItem);
       } else {
@@ -122,7 +123,7 @@ const Sidebar = () => {
     return acc;
   }, {});
 
-  const sections = ['Main', 'Operations', 'Compliance & Quality', 'Finance', 'Supply Chain', 'Service Providers', 'Intake', 'Admin'];
+  const sections = ['Main', 'Marketing', 'Operations', 'Compliance & Quality', 'Finance', 'Supply Chain', 'Service Providers', 'Intake', 'Admin'];
 
   return (
     <>

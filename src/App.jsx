@@ -17,6 +17,7 @@ import MainLayout from '@/layouts/MainLayout';
 import OpsHubDashboard from '@/pages/OpsHubDashboard';
 import OpsDataEntry from '@/pages/OpsDataEntry';
 import OpsHubImport from '@/pages/OpsHubImport';
+import AdvertisingWorkspace from '@/pages/AdvertisingWorkspace';
 import OpsHubProductDetail from '@/pages/OpsHubProductDetail';
 import OpsHubScorecard from '@/pages/OpsHubScorecard';
 import ProductMasterDataPage from '@/pages/ProductMasterDataPage';
@@ -104,6 +105,7 @@ export default function App() {
                       </MainLayout>
                     </ProtectedRoute>
                   } />
+                  <Route path="/ops-hub/advertising" element={<ProtectedRoute><MainLayout><RequireModule module="ops_hub"><AdvertisingWorkspace /></RequireModule></MainLayout></ProtectedRoute>} />
                   <Route path="/ops-hub/data-sources" element={
                     <ProtectedRoute>
                       <MainLayout>
