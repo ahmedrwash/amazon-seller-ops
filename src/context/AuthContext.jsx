@@ -1,6 +1,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
+import { createAuthEventScheduler } from '@/utils/authEvents';
 import { ROLES } from '@/constants/roleConstants';
 import { retryOperation, getFriendlyErrorMessage } from '@/utils/networkUtils';
 import { getUserRole, clearRoleCache } from '@/lib/permissions';
@@ -213,16 +214,13 @@ export const AuthProvider = ({ children }) => {
 
     initializeAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!mounted) return;
-      
-      setSession(session);
-      setUser(session?.user ?? null);
-      
+    const authEvents = createAuthEventScheduler(async (session, isCurrent) => {
       if (session?.user) {
         await refreshUserRole(session.user.id);
+        if (!isCurrent()) return;
         if (!profile || profile.id !== session.user.id) {
           const userProfile = await provisionProfile(session.user);
+          if (!isCurrent()) return;
           setProfile(userProfile);
         }
         await loadModulePermissions(session.user.id);
@@ -231,11 +229,20 @@ export const AuthProvider = ({ children }) => {
         setUserRole('viewer');
         setModulePermissions({});
       }
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
+    }, err => {
+      if (mounted) { setError(getFriendlyErrorMessage(err)); setLoading(false); }
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      setSession(session);
+      setUser(session?.user ?? null);
+      authEvents.enqueue(session);
     });
 
     return () => {
       mounted = false;
+      authEvents.dispose();
       subscription?.unsubscribe();
     };
   }, []);
