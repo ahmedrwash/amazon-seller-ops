@@ -133,6 +133,18 @@ begin
  end if;
  batch=(payload->>'batch_id')::uuid;
  select * into strict b from amazon_ads.import_batches where id=batch and account_id=account for update;
+ if action in ('update_contract','apply') and b.status<>'applied' and payload->'expected_contract' is distinct from b.import_contract then raise exception 'Report contract changed. Reopen the batch and review its latest settings';end if;
+ if action='update_contract' then
+   if b.status<>'staged' or jsonb_typeof(payload->'contract') is distinct from 'object' or length(btrim(coalesce(payload->>'notes','')))<10 then raise exception 'Only staged reports can have their contract corrected, with a review note';end if;
+   c=payload->'contract';
+   update amazon_ads.import_batches set import_contract=c,review_notes=left(payload->>'notes',4000) where id=batch;
+   for r in select * from amazon_ads.import_rows where batch_id=batch loop
+     normalized=amazon_ads.normalize_row(r.member_name,r.source_payload,c);
+     update amazon_ads.import_rows set normalized_payload=normalized,issues=normalized->'issues',validation_status=case when jsonb_array_length(normalized->'issues')>0 then 'needs_review' else 'pending' end where id=r.id;
+   end loop;
+   insert into amazon_ads.import_events(account_id,batch_id,actor_id,event_type,detail) values(account,batch,actor,'contract_corrected',jsonb_build_object('previous_contract',b.import_contract,'contract',c,'notes',left(payload->>'notes',4000)));
+   return jsonb_build_object('status','staged');
+ end if;
  if action='reject' then
    if b.status='applied' then raise exception 'Applied batches are immutable';end if;
    update amazon_ads.import_batches set status='rejected',review_notes=left(payload->>'notes',4000) where id=batch;

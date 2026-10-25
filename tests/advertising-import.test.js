@@ -43,8 +43,12 @@ test('RPC staging, deduplication, atomic apply, contract checks, RLS and source 
  alter table storage.objects enable row level security;grant usage on schema auth,storage to authenticated;grant select,insert,delete on storage.objects to authenticated;
  insert into auth.users values('${user}'),('${other}'),('${viewer}');insert into public.profiles values('${user}','admin',true),('${other}','editor',true),('${viewer}','viewer',true);`);
  await db.exec(readFileSync(new URL('../supabase/migrations/20261025122430_amazon_ads_import_core.sql',import.meta.url),'utf8'));
+ await db.exec(readFileSync(new URL('../supabase/migrations/20261025130744_advertising_contract_review.sql',import.meta.url),'utf8'));
  const auth=async id=>db.exec(`reset role;set role authenticated;select set_config('request.jwt.claim.sub','${id}',false)`);
- const rpc=async payload=>(await db.query('select public.advertising_import($1::jsonb) result',[JSON.stringify(payload)])).rows[0].result;
+ const rpc=async payload=>{
+  if(['apply','update_contract'].includes(payload.action)&&!Object.hasOwn(payload,'expected_contract'))payload={...payload,expected_contract:(await db.query('select import_contract from amazon_ads.import_batches where id=$1',[payload.batch_id])).rows[0]?.import_contract};
+  return (await db.query('select public.advertising_import($1::jsonb) result',[JSON.stringify(payload)])).rows[0].result;
+ };
  await auth(user);const account=(await rpc({action:'create_account',name:'Test seller'})).account_id;
  const contract={ad_product:'SP',country:'US',currency:'USD',granularity:'daily',source_system:'unified_reporting',period_start:'2026-10-01',period_end:'2026-10-10',source_generated_at:'2026-10-20T00:00:00Z',reporting_timezone:'America/Los_Angeles',attribution_window_days:'7',attribution_model:'test last touch',sales_definition:'total attributed sales',scope:'all_campaigns'};
  const row={member_name:'native_campaign',row_number:2,source_payload:{'Campaign ID':'A0000001','Campaign Name':'Test campaign',Date:'2026-10-10',Impressions:'100',Clicks:'10',Spend:'20',Sales:'80',Orders:'2'}};
@@ -62,10 +66,14 @@ test('RPC staging, deduplication, atomic apply, contract checks, RLS and source 
  const metrics=(await rpc({action:'metrics',account_id:account})).rows;assert.equal(metrics.length,1);assert.equal(Number(metrics[0].cpc),2);assert.equal(Number(metrics[0].roas),4);
  const bad=await stage([{...row,source_payload:{...row.source_payload,'Campaign ID':'A0000002',Clicks:''}}]);await assert.rejects(rpc({action:'apply',account_id:account,batch_id:bad.batch_id,confirm:true,notes:'Check missing metrics test.'}),/Resolve row issues/);
  const missingContract=await stage([{...row,source_payload:{...row.source_payload,'Campaign ID':'A0000003'}}],{});await assert.rejects(rpc({action:'apply',account_id:account,batch_id:missingContract.batch_id,confirm:true,notes:'Missing contract test.'}),/Only native/);
+ await rpc({action:'update_contract',account_id:account,batch_id:missingContract.batch_id,contract,notes:'Corrected report metadata from the original settings.'});
+ await assert.rejects(rpc({action:'apply',account_id:account,batch_id:missingContract.batch_id,expected_contract:{},confirm:true,notes:'Attempt approval with stale metadata.'}),/Report contract changed/);
+ await rpc({action:'apply',account_id:account,batch_id:missingContract.batch_id,confirm:true,notes:'Reviewed corrected report metadata.'});
+ await assert.rejects(rpc({action:'update_contract',account_id:account,batch_id:missingContract.batch_id,contract:{},notes:'Cannot mutate a published report.'}),/Only staged/);
  const duplicateRows=await stage([row,{...row,row_number:3}]);await assert.rejects(rpc({action:'apply',account_id:account,batch_id:duplicateRows.batch_id,confirm:true,notes:'Duplicate grain test.'}),/Duplicate campaign/);
  const breakdown=await stage([{...row,source_payload:{...row.source_payload,'Campaign ID':'A0000004',Placement:'Top'}}]);await assert.rejects(rpc({action:'apply',account_id:account,batch_id:breakdown.batch_id,confirm:true,notes:'Breakdown rejection test.'}),/Breakdown/);
  const wrongCurrency=await stage([{...row,source_payload:{...row.source_payload,'Campaign ID':'A0000005',Currency:'CAD'}}]);await assert.rejects(rpc({action:'apply',account_id:account,batch_id:wrongCurrency.batch_id,confirm:true,notes:'Currency mismatch test.'}),/Resolve row issues/);
- assert.equal((await rpc({action:'metrics',account_id:account})).rows.length,1);
+ assert.equal((await rpc({action:'metrics',account_id:account})).rows.length,2);
  const curved=await stage([{member_name:'search_terms',row_number:2,source_payload:{search_term:'test',clicks:'',period_note:'lifetime'}}],{},'curated_zip');const detail=await rpc({action:'detail',account_id:account,batch_id:curved.batch_id});assert.equal(detail.rows[0].normalized_payload.clicks,null);assert(detail.rows[0].issues.includes('exact_period_bounds_required'));
  await assert.rejects(rpc({action:'apply',account_id:account,batch_id:curved.batch_id,confirm:true,notes:'Curated not publishable.'}),/Only native/);
  await db.exec('reset role');await db.query('insert into amazon_ads.account_memberships values($1,$2,$3)',[account,viewer,'viewer']);await auth(viewer);
